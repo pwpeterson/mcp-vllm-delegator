@@ -4,6 +4,7 @@ import json
 import sys
 import logging
 import os
+import subprocess
 from mcp.server import Server
 from mcp.types import Tool, TextContent
 import httpx
@@ -436,6 +437,96 @@ async def list_tools() -> list[Tool]:
                 },
                 "required": ["changes_summary", "pr_type"]
             }
+        ),
+        Tool(
+            name="git_status",
+            description="Execute git status command. Shows working tree status including modified, added, deleted, and untracked files.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "porcelain": {
+                        "type": "boolean",
+                        "description": "Use porcelain format for machine-readable output",
+                        "default": true
+                    }
+                },
+                "required": []
+            }
+        ),
+        Tool(
+            name="git_add",
+            description="Execute git add command to stage files for commit.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "files": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Files to add (use ['.'] for all files)"
+                    }
+                },
+                "required": ["files"]
+            }
+        ),
+        Tool(
+            name="git_commit",
+            description="Execute git commit command with message. Automatically pushes to origin if successful.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "Commit message"
+                    },
+                    "auto_push": {
+                        "type": "boolean",
+                        "description": "Automatically push after successful commit",
+                        "default": true
+                    }
+                },
+                "required": ["message"]
+            }
+        ),
+        Tool(
+            name="git_diff",
+            description="Execute git diff command to show changes.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "staged": {
+                        "type": "boolean",
+                        "description": "Show staged changes (--cached)",
+                        "default": false
+                    },
+                    "files": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Specific files to diff (optional)",
+                        "default": []
+                    }
+                },
+                "required": []
+            }
+        ),
+        Tool(
+            name="git_log",
+            description="Execute git log command to show commit history.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Number of commits to show",
+                        "default": 10
+                    },
+                    "oneline": {
+                        "type": "boolean",
+                        "description": "Show one line per commit",
+                        "default": true
+                    }
+                },
+                "required": []
+            }
         )
     ]
     log_info(f"Returning {len(tools)} tools")
@@ -823,6 +914,176 @@ Use markdown formatting."""
                 pr_description = result['choices'][0]['message']['content']
                 log_info(f"Generated {len(pr_description)} characters of PR description")
                 return [TextContent(type="text", text=pr_description)]
+            
+            elif name == "git_status":
+                porcelain = arguments.get('porcelain', True)
+                cmd = ["git", "status"]
+                if porcelain:
+                    cmd.extend(["--porcelain", "-b"])
+                
+                log_info(f"Executing: {' '.join(cmd)}")
+                try:
+                    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                    output = result.stdout.strip()
+                    log_info(f"Git status completed successfully")
+                    
+                    # Parse porcelain output for structured response
+                    if porcelain:
+                        lines = output.split('\n')
+                        branch_line = lines[0] if lines else ""
+                        file_lines = lines[1:] if len(lines) > 1 else []
+                        
+                        files = {
+                            "modified": [],
+                            "added": [],
+                            "deleted": [],
+                            "untracked": []
+                        }
+                        
+                        for line in file_lines:
+                            if not line.strip():
+                                continue
+                            status = line[:2]
+                            filename = line[3:]
+                            
+                            if status.startswith('M'):
+                                files["modified"].append(filename)
+                            elif status.startswith('A'):
+                                files["added"].append(filename)
+                            elif status.startswith('D'):
+                                files["deleted"].append(filename)
+                            elif status.startswith('??'):
+                                files["untracked"].append(filename)
+                        
+                        response_data = {
+                            "ok": True,
+                            "output": output,
+                            "branch": branch_line,
+                            "files": files,
+                            "cmd": ' '.join(cmd)
+                        }
+                        return [TextContent(type="text", text=json.dumps(response_data, indent=2))]
+                    else:
+                        return [TextContent(type="text", text=output)]
+                        
+                except subprocess.CalledProcessError as e:
+                    error_msg = f"Git status failed: {e.stderr}"
+                    log_error(error_msg)
+                    return [TextContent(type="text", text=json.dumps({"ok": False, "error": error_msg}))]
+            
+            elif name == "git_add":
+                files = arguments.get('files', [])
+                if not files:
+                    return [TextContent(type="text", text=json.dumps({"ok": False, "error": "No files specified"}))]
+                
+                cmd = ["git", "add"] + files
+                log_info(f"Executing: {' '.join(cmd)}")
+                
+                try:
+                    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                    log_info(f"Git add completed successfully")
+                    response_data = {
+                        "ok": True,
+                        "output": result.stdout.strip(),
+                        "cmd": ' '.join(cmd)
+                    }
+                    return [TextContent(type="text", text=json.dumps(response_data, indent=2))]
+                    
+                except subprocess.CalledProcessError as e:
+                    error_msg = f"Git add failed: {e.stderr}"
+                    log_error(error_msg)
+                    return [TextContent(type="text", text=json.dumps({"ok": False, "error": error_msg}))]
+            
+            elif name == "git_commit":
+                message = arguments.get('message', '')
+                auto_push = arguments.get('auto_push', True)
+                
+                if not message:
+                    return [TextContent(type="text", text=json.dumps({"ok": False, "error": "Commit message required"}))]
+                
+                cmd = ["git", "commit", "-m", message]
+                log_info(f"Executing: git commit -m '[message]'")
+                
+                try:
+                    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                    log_info(f"Git commit completed successfully")
+                    
+                    response_data = {
+                        "ok": True,
+                        "output": result.stdout.strip(),
+                        "message": message,
+                        "cmd": f"git commit -m {message}"
+                    }
+                    
+                    # Auto-push if enabled
+                    if auto_push:
+                        push_cmd = ["git", "push", "origin", "HEAD"]
+                        log_info("Auto-pushing to origin")
+                        try:
+                            push_result = subprocess.run(push_cmd, capture_output=True, text=True, check=True)
+                            response_data["push"] = {
+                                "ok": True,
+                                "output": push_result.stdout.strip(),
+                                "cmd": ' '.join(push_cmd)
+                            }
+                            log_info("Git push completed successfully")
+                        except subprocess.CalledProcessError as e:
+                            response_data["push"] = {
+                                "ok": False,
+                                "error": f"Push failed: {e.stderr}",
+                                "cmd": ' '.join(push_cmd)
+                            }
+                            log_error(f"Git push failed: {e.stderr}")
+                    
+                    return [TextContent(type="text", text=json.dumps(response_data, indent=2))]
+                    
+                except subprocess.CalledProcessError as e:
+                    error_msg = f"Git commit failed: {e.stderr}"
+                    log_error(error_msg)
+                    return [TextContent(type="text", text=json.dumps({"ok": False, "error": error_msg}))]
+            
+            elif name == "git_diff":
+                staged = arguments.get('staged', False)
+                files = arguments.get('files', [])
+                
+                cmd = ["git", "diff"]
+                if staged:
+                    cmd.append("--cached")
+                cmd.extend(files)
+                
+                log_info(f"Executing: {' '.join(cmd)}")
+                
+                try:
+                    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                    output = result.stdout.strip()
+                    log_info(f"Git diff completed successfully")
+                    return [TextContent(type="text", text=output if output else "No differences found")]
+                    
+                except subprocess.CalledProcessError as e:
+                    error_msg = f"Git diff failed: {e.stderr}"
+                    log_error(error_msg)
+                    return [TextContent(type="text", text=json.dumps({"ok": False, "error": error_msg}))]
+            
+            elif name == "git_log":
+                limit = arguments.get('limit', 10)
+                oneline = arguments.get('oneline', True)
+                
+                cmd = ["git", "log", f"-{limit}"]
+                if oneline:
+                    cmd.append("--oneline")
+                
+                log_info(f"Executing: {' '.join(cmd)}")
+                
+                try:
+                    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                    output = result.stdout.strip()
+                    log_info(f"Git log completed successfully")
+                    return [TextContent(type="text", text=output if output else "No commits found")]
+                    
+                except subprocess.CalledProcessError as e:
+                    error_msg = f"Git log failed: {e.stderr}"
+                    log_error(error_msg)
+                    return [TextContent(type="text", text=json.dumps({"ok": False, "error": error_msg}))]
             
             log_error(f"Unknown tool: {name}")
             raise ValueError(f"Unknown tool: {name}")
