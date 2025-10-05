@@ -527,6 +527,226 @@ async def list_tools() -> list[Tool]:
                 },
                 "required": []
             }
+        ),
+        Tool(
+            name="create_config_file",
+            description="Generate and create common configuration files using local LLM. Use for: .env, package.json, requirements.txt, Dockerfile, etc.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "file_type": {
+                        "type": "string",
+                        "enum": ["env", "package_json", "requirements_txt", "dockerfile", "makefile", "gitignore", "readme", "contributing", "license", "custom"],
+                        "description": "Type of config file to generate"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "File path where to create the file"
+                    },
+                    "options": {
+                        "type": "object",
+                        "description": "Configuration options (e.g., project_name, language, dependencies)",
+                        "default": {}
+                    },
+                    "custom_prompt": {
+                        "type": "string",
+                        "description": "Custom prompt for file generation (used with 'custom' file_type)",
+                        "default": ""
+                    }
+                },
+                "required": ["file_type", "path"]
+            }
+        ),
+        Tool(
+            name="create_directory_structure",
+            description="Generate and create standard directory structures using local LLM. Use for: project scaffolding, standard layouts.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "structure_type": {
+                        "type": "string",
+                        "enum": ["python_project", "node_project", "rust_project", "go_project", "web_project", "api_project", "custom"],
+                        "description": "Type of directory structure to create"
+                    },
+                    "base_path": {
+                        "type": "string",
+                        "description": "Base directory path"
+                    },
+                    "project_name": {
+                        "type": "string",
+                        "description": "Project name"
+                    },
+                    "options": {
+                        "type": "object",
+                        "description": "Additional options (e.g., include_tests, include_docs)",
+                        "default": {}
+                    }
+                },
+                "required": ["structure_type", "base_path", "project_name"]
+            }
+        ),
+        Tool(
+            name="create_github_issue",
+            description="Generate and create GitHub issues using local LLM. Use for: bug reports, feature requests, task issues.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "repository": {
+                        "type": "string",
+                        "description": "Repository in format 'owner/repo'"
+                    },
+                    "issue_type": {
+                        "type": "string",
+                        "enum": ["bug", "feature", "enhancement", "task", "question", "documentation"],
+                        "description": "Type of issue"
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Issue title"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Issue description or context"
+                    },
+                    "labels": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Labels to apply",
+                        "default": []
+                    }
+                },
+                "required": ["repository", "issue_type", "title", "description"]
+            }
+        ),
+        Tool(
+            name="create_github_pr",
+            description="Generate and create GitHub pull requests using local LLM. Use for: feature PRs, bug fixes, documentation updates.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "repository": {
+                        "type": "string",
+                        "description": "Repository in format 'owner/repo'"
+                    },
+                    "head_branch": {
+                        "type": "string",
+                        "description": "Source branch"
+                    },
+                    "base_branch": {
+                        "type": "string",
+                        "description": "Target branch",
+                        "default": "main"
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "PR title"
+                    },
+                    "changes_summary": {
+                        "type": "string",
+                        "description": "Summary of changes made"
+                    },
+                    "pr_type": {
+                        "type": "string",
+                        "enum": ["feature", "bugfix", "hotfix", "refactor", "docs", "chore"],
+                        "description": "Type of pull request"
+                    }
+                },
+                "required": ["repository", "head_branch", "title", "changes_summary", "pr_type"]
+            }
+        ),
+        Tool(
+            name="execute_dev_command",
+            description="Execute common development commands using subprocess. Use for: package installation, build commands, test execution.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "command_type": {
+                        "type": "string",
+                        "enum": ["npm_install", "pip_install", "cargo_build", "go_mod_tidy", "make", "test", "custom"],
+                        "description": "Type of command to execute"
+                    },
+                    "arguments": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Command arguments",
+                        "default": []
+                    },
+                    "working_directory": {
+                        "type": "string",
+                        "description": "Working directory for command execution",
+                        "default": "."
+                    },
+                    "custom_command": {
+                        "type": "string",
+                        "description": "Custom command to execute (used with 'custom' command_type)",
+                        "default": ""
+                    }
+                },
+                "required": ["command_type"]
+            }
+        ),
+        Tool(
+            name="create_database_schema",
+            description="Generate and execute SQLite database schema creation using local LLM. Use for: table creation, index creation, basic schema setup.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "database_path": {
+                        "type": "string",
+                        "description": "Path to SQLite database file"
+                    },
+                    "schema_description": {
+                        "type": "string",
+                        "description": "Description of the schema to create"
+                    },
+                    "tables": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string"},
+                                "description": {"type": "string"}
+                            }
+                        },
+                        "description": "Table specifications",
+                        "default": []
+                    }
+                },
+                "required": ["database_path", "schema_description"]
+            }
+        ),
+        Tool(
+            name="generate_sql_queries",
+            description="Generate common SQL queries using local LLM. Use for: CRUD operations, data analysis queries, reporting queries.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query_type": {
+                        "type": "string",
+                        "enum": ["select", "insert", "update", "delete", "create_table", "create_index", "analytics"],
+                        "description": "Type of SQL query to generate"
+                    },
+                    "table_info": {
+                        "type": "string",
+                        "description": "Information about tables and columns involved"
+                    },
+                    "requirements": {
+                        "type": "string",
+                        "description": "Specific requirements for the query"
+                    },
+                    "execute": {
+                        "type": "boolean",
+                        "description": "Whether to execute the query (for safe operations only)",
+                        "default": false
+                    },
+                    "database_path": {
+                        "type": "string",
+                        "description": "Database path (required if execute=true)",
+                        "default": ""
+                    }
+                },
+                "required": ["query_type", "table_info", "requirements"]
+            }
         )
     ]
     log_info(f"Returning {len(tools)} tools")
@@ -1084,6 +1304,349 @@ Use markdown formatting."""
                     error_msg = f"Git log failed: {e.stderr}"
                     log_error(error_msg)
                     return [TextContent(type="text", text=json.dumps({"ok": False, "error": error_msg}))]
+            
+            elif name == "create_config_file":
+                file_type = arguments['file_type']
+                path = arguments['path']
+                options = arguments.get('options', {})
+                custom_prompt = arguments.get('custom_prompt', '')
+                
+                if file_type == 'custom' and not custom_prompt:
+                    return [TextContent(type="text", text=json.dumps({"ok": False, "error": "Custom prompt required for custom file type"}))]
+                
+                # Generate file content using LLM
+                if file_type == 'custom':
+                    prompt = custom_prompt
+                else:
+                    options_str = json.dumps(options, indent=2) if options else "none"
+                    prompt = f"""Generate a {file_type} configuration file.
+
+Options: {options_str}
+
+Generate complete, production-ready file content. Include comments where appropriate.
+Provide only the file content, no explanations."""
+                
+                log_info(f"Generating {file_type} config file")
+                response = await client.post(VLLM_API_URL, json={
+                    "model": VLLM_MODEL,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 1500,
+                    "temperature": 0.2
+                })
+                
+                result = response.json()
+                content = result['choices'][0]['message']['content']
+                
+                # Write file
+                try:
+                    os.makedirs(os.path.dirname(path), exist_ok=True)
+                    with open(path, 'w') as f:
+                        f.write(content)
+                    
+                    log_info(f"Created config file: {path}")
+                    return [TextContent(type="text", text=json.dumps({
+                        "ok": True,
+                        "path": path,
+                        "file_type": file_type,
+                        "content_length": len(content)
+                    }, indent=2))]
+                    
+                except Exception as e:
+                    error_msg = f"Failed to write file {path}: {str(e)}"
+                    log_error(error_msg)
+                    return [TextContent(type="text", text=json.dumps({"ok": False, "error": error_msg}))]
+            
+            elif name == "create_directory_structure":
+                structure_type = arguments['structure_type']
+                base_path = arguments['base_path']
+                project_name = arguments['project_name']
+                options = arguments.get('options', {})
+                
+                options_str = json.dumps(options, indent=2) if options else "standard options"
+                
+                prompt = f"""Generate a directory structure for a {structure_type} project named '{project_name}'.
+
+Options: {options_str}
+
+Provide a JSON list of directory paths to create (relative to base path).
+Include standard directories for this project type.
+Format: ["dir1", "dir2/subdir", "dir3"]
+
+Provide only the JSON array, no explanations."""
+                
+                log_info(f"Generating {structure_type} directory structure")
+                response = await client.post(VLLM_API_URL, json={
+                    "model": VLLM_MODEL,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 800,
+                    "temperature": 0.2
+                })
+                
+                result = response.json()
+                directories_json = result['choices'][0]['message']['content'].strip()
+                
+                try:
+                    # Parse JSON response
+                    directories = json.loads(directories_json)
+                    created_dirs = []
+                    
+                    # Create directories
+                    for dir_path in directories:
+                        full_path = os.path.join(base_path, project_name, dir_path)
+                        os.makedirs(full_path, exist_ok=True)
+                        created_dirs.append(full_path)
+                    
+                    log_info(f"Created {len(created_dirs)} directories")
+                    return [TextContent(type="text", text=json.dumps({
+                        "ok": True,
+                        "project_path": os.path.join(base_path, project_name),
+                        "directories_created": created_dirs,
+                        "structure_type": structure_type
+                    }, indent=2))]
+                    
+                except (json.JSONDecodeError, Exception) as e:
+                    error_msg = f"Failed to create directory structure: {str(e)}"
+                    log_error(error_msg)
+                    return [TextContent(type="text", text=json.dumps({"ok": False, "error": error_msg, "raw_response": directories_json}))]
+            
+            elif name == "execute_dev_command":
+                command_type = arguments['command_type']
+                args = arguments.get('arguments', [])
+                working_dir = arguments.get('working_directory', '.')
+                custom_command = arguments.get('custom_command', '')
+                
+                # Map command types to actual commands
+                command_map = {
+                    'npm_install': ['npm', 'install'] + args,
+                    'pip_install': ['pip', 'install'] + args,
+                    'cargo_build': ['cargo', 'build'] + args,
+                    'go_mod_tidy': ['go', 'mod', 'tidy'] + args,
+                    'make': ['make'] + args,
+                    'test': ['npm', 'test'] + args if os.path.exists('package.json') else ['python', '-m', 'pytest'] + args
+                }
+                
+                if command_type == 'custom':
+                    if not custom_command:
+                        return [TextContent(type="text", text=json.dumps({"ok": False, "error": "Custom command required"}))]
+                    cmd = custom_command.split() + args
+                else:
+                    cmd = command_map.get(command_type)
+                    if not cmd:
+                        return [TextContent(type="text", text=json.dumps({"ok": False, "error": f"Unknown command type: {command_type}"}))]
+                
+                log_info(f"Executing: {' '.join(cmd)} in {working_dir}")
+                
+                try:
+                    result = subprocess.run(cmd, capture_output=True, text=True, cwd=working_dir, timeout=300)
+                    
+                    response_data = {
+                        "ok": result.returncode == 0,
+                        "command": ' '.join(cmd),
+                        "working_directory": working_dir,
+                        "return_code": result.returncode,
+                        "stdout": result.stdout,
+                        "stderr": result.stderr
+                    }
+                    
+                    if result.returncode != 0:
+                        log_error(f"Command failed with return code {result.returncode}")
+                    else:
+                        log_info(f"Command executed successfully")
+                    
+                    return [TextContent(type="text", text=json.dumps(response_data, indent=2))]
+                    
+                except subprocess.TimeoutExpired:
+                    error_msg = "Command timed out after 5 minutes"
+                    log_error(error_msg)
+                    return [TextContent(type="text", text=json.dumps({"ok": False, "error": error_msg}))]
+                except Exception as e:
+                    error_msg = f"Command execution failed: {str(e)}"
+                    log_error(error_msg)
+                    return [TextContent(type="text", text=json.dumps({"ok": False, "error": error_msg}))]
+            
+            elif name == "create_github_issue":
+                repository = arguments['repository']
+                issue_type = arguments['issue_type']
+                title = arguments['title']
+                description = arguments['description']
+                labels = arguments.get('labels', [])
+                
+                # Generate issue body using LLM
+                prompt = f"""Generate a comprehensive GitHub issue body for a {issue_type} issue.
+
+Title: {title}
+Description/Context: {description}
+
+Generate a well-structured issue body with:
+- Clear problem description
+- Steps to reproduce (if bug)
+- Expected vs actual behavior (if bug)
+- Acceptance criteria (if feature)
+- Additional context
+
+Use markdown formatting. Provide only the issue body content."""
+                
+                log_info(f"Generating GitHub issue body for {repository}")
+                response = await client.post(VLLM_API_URL, json={
+                    "model": VLLM_MODEL,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 1200,
+                    "temperature": 0.3
+                })
+                
+                result = response.json()
+                issue_body = result['choices'][0]['message']['content']
+                
+                # Note: This would normally call GitHub API, but we'll return the generated content
+                # In a real implementation, you'd use the github MCP server here
+                log_info(f"Generated issue content for {repository}")
+                return [TextContent(type="text", text=json.dumps({
+                    "ok": True,
+                    "repository": repository,
+                    "title": title,
+                    "body": issue_body,
+                    "labels": labels,
+                    "issue_type": issue_type,
+                    "note": "Issue content generated. Use GitHub MCP server to actually create the issue."
+                }, indent=2))]
+            
+            elif name == "create_github_pr":
+                repository = arguments['repository']
+                head_branch = arguments['head_branch']
+                base_branch = arguments.get('base_branch', 'main')
+                title = arguments['title']
+                changes_summary = arguments['changes_summary']
+                pr_type = arguments['pr_type']
+                
+                # Generate PR description using LLM
+                prompt = f"""Generate a comprehensive GitHub pull request description for a {pr_type} PR.
+
+Title: {title}
+Changes Summary: {changes_summary}
+Branch: {head_branch} -> {base_branch}
+
+Generate a well-structured PR description with:
+- Brief summary of changes
+- What was changed and why
+- Testing performed
+- Checklist for reviewers
+- Any breaking changes or migration notes
+
+Use markdown formatting. Provide only the PR description content."""
+                
+                log_info(f"Generating GitHub PR description for {repository}")
+                response = await client.post(VLLM_API_URL, json={
+                    "model": VLLM_MODEL,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 1200,
+                    "temperature": 0.3
+                })
+                
+                result = response.json()
+                pr_body = result['choices'][0]['message']['content']
+                
+                # Note: This would normally call GitHub API, but we'll return the generated content
+                log_info(f"Generated PR content for {repository}")
+                return [TextContent(type="text", text=json.dumps({
+                    "ok": True,
+                    "repository": repository,
+                    "title": title,
+                    "body": pr_body,
+                    "head_branch": head_branch,
+                    "base_branch": base_branch,
+                    "pr_type": pr_type,
+                    "note": "PR content generated. Use GitHub MCP server to actually create the pull request."
+                }, indent=2))]
+            
+            elif name == "create_database_schema":
+                database_path = arguments['database_path']
+                schema_description = arguments['schema_description']
+                tables = arguments.get('tables', [])
+                
+                tables_info = "\n".join([f"- {table.get('name', 'unnamed')}: {table.get('description', 'no description')}" for table in tables]) if tables else "No specific tables mentioned"
+                
+                prompt = f"""Generate SQLite CREATE TABLE statements for this database schema.
+
+Schema Description: {schema_description}
+
+Tables:
+{tables_info}
+
+Generate complete CREATE TABLE statements with:
+- Appropriate data types
+- Primary keys
+- Foreign key relationships where applicable
+- Indexes for common queries
+- Comments explaining the schema
+
+Provide only the SQL statements, properly formatted."""
+                
+                log_info(f"Generating database schema for {database_path}")
+                response = await client.post(VLLM_API_URL, json={
+                    "model": VLLM_MODEL,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 2000,
+                    "temperature": 0.2
+                })
+                
+                result = response.json()
+                sql_schema = result['choices'][0]['message']['content']
+                
+                # Note: This would normally execute the SQL, but we'll return the generated schema
+                # In a real implementation, you'd use the sqlite MCP server here
+                log_info(f"Generated schema SQL for {database_path}")
+                return [TextContent(type="text", text=json.dumps({
+                    "ok": True,
+                    "database_path": database_path,
+                    "schema_sql": sql_schema,
+                    "tables_count": len(tables),
+                    "note": "Schema SQL generated. Use SQLite MCP server to actually execute the schema creation."
+                }, indent=2))]
+            
+            elif name == "generate_sql_queries":
+                query_type = arguments['query_type']
+                table_info = arguments['table_info']
+                requirements = arguments['requirements']
+                execute = arguments.get('execute', False)
+                database_path = arguments.get('database_path', '')
+                
+                prompt = f"""Generate a {query_type.upper()} SQL query based on these requirements.
+
+Table Information: {table_info}
+Requirements: {requirements}
+
+Generate a complete, optimized SQL query with:
+- Proper syntax for SQLite
+- Comments explaining the logic
+- Appropriate WHERE clauses, JOINs, etc.
+- Error handling considerations
+
+Provide only the SQL query, properly formatted."""
+                
+                log_info(f"Generating {query_type} SQL query")
+                response = await client.post(VLLM_API_URL, json={
+                    "model": VLLM_MODEL,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 1000,
+                    "temperature": 0.2
+                })
+                
+                result = response.json()
+                sql_query = result['choices'][0]['message']['content']
+                
+                response_data = {
+                    "ok": True,
+                    "query_type": query_type,
+                    "sql_query": sql_query,
+                    "requirements": requirements
+                }
+                
+                if execute and database_path:
+                    response_data["note"] = "Query generated. Use SQLite MCP server to execute if needed."
+                    response_data["database_path"] = database_path
+                
+                log_info(f"Generated {query_type} SQL query")
+                return [TextContent(type="text", text=json.dumps(response_data, indent=2))]
             
             log_error(f"Unknown tool: {name}")
             raise ValueError(f"Unknown tool: {name}")
