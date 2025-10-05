@@ -1,0 +1,156 @@
+{
+  "mcpServers": {
+    "github.com/AgentDeskAI/browser-tools-mcp": {
+      "type": "stdio",
+      "timeout": 60,
+      "disabled": false,
+      "command": "npx",
+      "args": [
+        "-y",
+        "@agentdeskai/browser-tools-mcp"
+      ],
+      "autoApprove": []
+    },
+    "github.com/zcaceres/fetch-mcp": {
+      "type": "stdio",
+      "timeout": 60,
+      "disabled": false,
+      "command": "node",
+      "args": [
+        "/home/pwp/srv/coding_agent/mcp/fetch-mcp/dist/index.js"
+      ],
+      "autoApprove": []
+    },
+    "crawl4ai-rag": {
+      "type": "sse",
+      "timeout": 60,
+      "url": "http://localhost:8051/sse",
+      "disabled": false,
+      "alwaysAllow": [
+        "search_code_examples"
+      ]
+    },
+    "mcp-git-safe": {
+      "type": "stdio",
+      "command": "/home/pwp/srv/coding_agent/mcp/mcp-git-safe/.venv/bin/python",
+      "args": [
+        "/home/pwp/srv/coding_agent/mcp/mcp-git-safe/mcp-git-safe.py"
+      ],
+      "alwaysAllow": [
+        "git_status",
+        "git_log",
+        "git_diff",
+        "git_add",
+        "git_commit",
+        "git_push"
+      ]
+    },
+    "mcp-execute-command": {
+      "type": "stdio",
+      "timeout": 180,
+      "command": "python3",
+      "args": [
+        "/home/pwp/srv/coding_agent/mcp/mcp-execute-command/main.py"
+      ],
+      "disabled": false,
+      "alwaysAllow": [
+        "execute_command"
+      ],
+      "disabledTools": []
+    },  
+    "github": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "-e",
+        "GITHUB_TOOLSETS",
+        "-e",
+        "GITHUB_READ_ONLY",
+        "ghcr.io/github/github-mcp-server"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}",
+        "GITHUB_TOOLSETS": "",
+        "GITHUB_READ_ONLY": ""
+      },
+      "alwaysAllow": [
+        "get_file_contents"
+      ],
+      "disabled": true
+    },
+    "filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "${workspaceFolder}"
+      ],
+      "alwaysAllow": [
+        "list_directory",
+        "read_text_file",
+        "read_multiple_files",
+        "directory_tree",
+        "search_files",
+        "write_file",
+        "create_directory",
+        "edit_file"
+      ]
+    },
+    "brave-search": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-brave-search"
+      ],
+      "env": {
+        "BRAVE_API_KEY": "${BRAVE_API_KEY}"
+      },
+      "alwaysAllow": [
+        "brave_web_search"
+      ]
+    },
+    "sequentialthinking": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ]
+    },
+    "context7": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ]
+    },
+    "puppeteer": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-puppeteer"
+      ]
+    },
+    "sqlite": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "mcp-server-sqlite",
+        "--db-path",
+        "/home/pwp/srv/databases/sqlite/mytest.db"
+      ],
+      "alwaysAllow": [
+        "list_tables"
+      ]
+    }
+  }
+}
