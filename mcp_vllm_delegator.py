@@ -325,6 +325,117 @@ async def list_tools() -> list[Tool]:
                 },
                 "required": ["description", "schema_type"]
             }
+        ),
+        Tool(
+            name="generate_git_commit_message",
+            description="Generate conventional commit messages using local LLM. Use for: creating clear, descriptive commit messages following conventional commit format.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "changes_summary": {
+                        "type": "string",
+                        "description": "Summary of changes made (can be git diff output or description)"
+                    },
+                    "commit_type": {
+                        "type": "string",
+                        "enum": ["feat", "fix", "docs", "style", "refactor", "test", "chore", "auto"],
+                        "default": "auto",
+                        "description": "Type of commit (auto = let LLM decide)"
+                    },
+                    "scope": {
+                        "type": "string",
+                        "description": "Optional scope of the change (e.g., 'api', 'ui', 'auth')",
+                        "default": ""
+                    }
+                },
+                "required": ["changes_summary"]
+            }
+        ),
+        Tool(
+            name="generate_gitignore",
+            description="Generate .gitignore files using local LLM. Use for: creating comprehensive .gitignore files for specific languages/frameworks.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "language": {
+                        "type": "string",
+                        "description": "Primary programming language (e.g., python, javascript, rust, go)"
+                    },
+                    "frameworks": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Additional frameworks/tools (e.g., ['react', 'docker', 'vscode'])",
+                        "default": []
+                    },
+                    "custom_patterns": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Custom patterns to include",
+                        "default": []
+                    }
+                },
+                "required": ["language"]
+            }
+        ),
+        Tool(
+            name="generate_github_workflow",
+            description="Generate GitHub Actions workflow files using local LLM. Use for: CI/CD pipelines, automated testing, deployment workflows.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "workflow_type": {
+                        "type": "string",
+                        "enum": ["ci", "cd", "test", "release", "lint", "security", "custom"],
+                        "description": "Type of workflow to generate"
+                    },
+                    "language": {
+                        "type": "string",
+                        "description": "Programming language",
+                        "default": "python"
+                    },
+                    "triggers": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Workflow triggers (e.g., ['push', 'pull_request', 'schedule'])",
+                        "default": ["push", "pull_request"]
+                    },
+                    "custom_requirements": {
+                        "type": "string",
+                        "description": "Additional requirements or steps",
+                        "default": ""
+                    }
+                },
+                "required": ["workflow_type"]
+            }
+        ),
+        Tool(
+            name="generate_pr_description",
+            description="Generate pull request descriptions using local LLM. Use for: creating comprehensive PR descriptions with context and changes summary.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "changes_summary": {
+                        "type": "string",
+                        "description": "Summary of changes made (can be git diff output or description)"
+                    },
+                    "pr_type": {
+                        "type": "string",
+                        "enum": ["feature", "bugfix", "hotfix", "refactor", "docs", "chore"],
+                        "description": "Type of pull request"
+                    },
+                    "context": {
+                        "type": "string",
+                        "description": "Additional context about why these changes were made",
+                        "default": ""
+                    },
+                    "breaking_changes": {
+                        "type": "boolean",
+                        "description": "Whether this PR contains breaking changes",
+                        "default": false
+                    }
+                },
+                "required": ["changes_summary", "pr_type"]
+            }
         )
     ]
     log_info(f"Returning {len(tools)} tools")
@@ -590,6 +701,128 @@ Generate complete, well-typed schema code."""
                 schema = result['choices'][0]['message']['content']
                 log_info(f"Generated {len(schema)} characters of schema")
                 return [TextContent(type="text", text=schema)]
+            
+            elif name == "generate_git_commit_message":
+                commit_type = arguments.get('commit_type', 'auto')
+                scope = arguments.get('scope', '')
+                
+                type_instruction = f"Use commit type '{commit_type}'" if commit_type != 'auto' else "Choose appropriate commit type (feat, fix, docs, style, refactor, test, chore)"
+                scope_instruction = f" with scope '{scope}'" if scope else ""
+                
+                prompt = f"""Generate a conventional commit message for these changes.
+
+{type_instruction}{scope_instruction}.
+
+Changes summary:
+{arguments['changes_summary']}
+
+Format: type(scope): description
+
+Provide only the commit message, no explanations."""
+                
+                log_info("Calling vLLM API for generate_git_commit_message")
+                response = await client.post(VLLM_API_URL, json={
+                    "model": VLLM_MODEL,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 200,
+                    "temperature": 0.3
+                })
+                
+                result = response.json()
+                commit_message = result['choices'][0]['message']['content'].strip()
+                log_info(f"Generated commit message: {commit_message[:50]}...")
+                return [TextContent(type="text", text=commit_message)]
+            
+            elif name == "generate_gitignore":
+                frameworks = arguments.get('frameworks', [])
+                custom_patterns = arguments.get('custom_patterns', [])
+                
+                frameworks_str = ", ".join(frameworks) if frameworks else "none"
+                custom_str = "\n".join(custom_patterns) if custom_patterns else "none"
+                
+                prompt = f"""Generate a comprehensive .gitignore file for {arguments['language']}.
+
+Additional frameworks/tools: {frameworks_str}
+Custom patterns to include: {custom_str}
+
+Include common patterns for the language, IDE files, OS files, and build artifacts.
+Provide only the .gitignore content, no explanations."""
+                
+                log_info("Calling vLLM API for generate_gitignore")
+                response = await client.post(VLLM_API_URL, json={
+                    "model": VLLM_MODEL,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 1000,
+                    "temperature": 0.2
+                })
+                
+                result = response.json()
+                gitignore = result['choices'][0]['message']['content']
+                log_info(f"Generated {len(gitignore)} characters of .gitignore")
+                return [TextContent(type="text", text=gitignore)]
+            
+            elif name == "generate_github_workflow":
+                language = arguments.get('language', 'python')
+                triggers = arguments.get('triggers', ['push', 'pull_request'])
+                custom_requirements = arguments.get('custom_requirements', '')
+                
+                triggers_str = ", ".join(triggers)
+                custom_str = f"\n\nAdditional requirements: {custom_requirements}" if custom_requirements else ""
+                
+                prompt = f"""Generate a GitHub Actions workflow file for {arguments['workflow_type']} in {language}.
+
+Triggers: {triggers_str}{custom_str}
+
+Generate a complete, production-ready .github/workflows/[name].yml file.
+Include appropriate steps for the workflow type and language.
+Provide only the YAML content, no explanations."""
+                
+                log_info("Calling vLLM API for generate_github_workflow")
+                response = await client.post(VLLM_API_URL, json={
+                    "model": VLLM_MODEL,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 1500,
+                    "temperature": 0.2
+                })
+                
+                result = response.json()
+                workflow = result['choices'][0]['message']['content']
+                log_info(f"Generated {len(workflow)} characters of workflow")
+                return [TextContent(type="text", text=workflow)]
+            
+            elif name == "generate_pr_description":
+                context = arguments.get('context', '')
+                breaking_changes = arguments.get('breaking_changes', False)
+                
+                context_str = f"\n\nContext: {context}" if context else ""
+                breaking_str = "\n\n⚠️ This PR contains BREAKING CHANGES" if breaking_changes else ""
+                
+                prompt = f"""Generate a comprehensive pull request description for a {arguments['pr_type']} PR.
+
+Changes summary:
+{arguments['changes_summary']}{context_str}{breaking_str}
+
+Include:
+- Brief summary
+- What changed
+- Why the change was needed
+- Testing notes (if applicable)
+- Checklist for reviewers
+
+Use markdown formatting."""
+                
+                log_info("Calling vLLM API for generate_pr_description")
+                response = await client.post(VLLM_API_URL, json={
+                    "model": VLLM_MODEL,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 1200,
+                    "temperature": 0.3
+                })
+                
+                result = response.json()
+                pr_description = result['choices'][0]['message']['content']
+                log_info(f"Generated {len(pr_description)} characters of PR description")
+                return [TextContent(type="text", text=pr_description)]
             
             log_error(f"Unknown tool: {name}")
             raise ValueError(f"Unknown tool: {name}")
