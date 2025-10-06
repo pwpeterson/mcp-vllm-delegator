@@ -285,11 +285,8 @@ curl http://localhost:8002/v1/models
 ### MCP Server Not Loading
 
 ```bash
-# Test the server manually with logging enabled
-LOGGING_ON=true python ~/mcp-servers/mcp_vllm_delegator.py
-
-# Check the logs for errors
-tail -f /tmp/vllm_mcp_delegator.log
+# Test the server directly
+python ~/mcp-servers/mcp_vllm_delegator.py
 
 # Check Roo Code logs in VS Code
 # View > Output > Select "Roo Code" from dropdown
@@ -368,34 +365,15 @@ Tool(
 
 ### Logging for Debugging
 
-Add logging to track tool usage and debug issues:
+Add logging to track tool usage:
 
-**Enable via Environment Variables:**
-```json
-{
-  "mcpServers": {
-    "vllm-delegator": {
-      "command": "/home/YOUR_USERNAME/.venv/bin/python",
-      "args": ["/home/YOUR_USERNAME/mcp_vllm_delegator.py"],
-      "env": {
-        "LOGGING_ON": "true",
-        "LOG_LEVEL": "DEBUG"
-      }
-    }
-  }
-}
-```
+```python
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-**Watch logs:**
-```bash
-tail -f /tmp/vllm_mcp_delegator.log
-```
-
-**Disable logging for production:**
-```json
-"env": {
-  "LOGGING_ON": "false"
-}
+# In call_tool function
+logger.info(f"Processing {name} with args: {arguments}")
 ```
 
 ### Multi-GPU Setup

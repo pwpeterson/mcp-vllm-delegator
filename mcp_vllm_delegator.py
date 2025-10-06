@@ -5,18 +5,17 @@ import sys
 import logging
 import os
 import subprocess
+from pathlib import Path
 from mcp.server import Server
 from mcp.types import Tool, TextContent
 import httpx
 
 # ========== CONFIGURABLE LOGGING SETUP ==========
-# Check environment variables for logging control
 LOGGING_ENABLED = os.getenv('LOGGING_ON', 'false').lower() in ('true', '1', 'yes', 'on')
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
 LOG_FILE = os.getenv('LOG_FILE', '/tmp/vllm_mcp_delegator.log')
 
 if LOGGING_ENABLED:
-    # Create log directory if it doesn't exist
     log_dir = os.path.dirname(LOG_FILE)
     if log_dir and not os.path.exists(log_dir):
         os.makedirs(log_dir, exist_ok=True)
@@ -36,7 +35,6 @@ if LOGGING_ENABLED:
     logger.info(f"Log File: {LOG_FILE}")
     logger.info("=" * 50)
 else:
-    # Minimal/no-op logging when disabled
     logging.basicConfig(
         level=logging.ERROR,
         format='%(levelname)s - %(message)s',
@@ -44,7 +42,6 @@ else:
     )
     logger = logging.getLogger(__name__)
 
-# Helper functions for conditional logging
 def log_info(msg):
     if LOGGING_ENABLED:
         logger.info(msg)
@@ -56,7 +53,7 @@ def log_debug(msg):
 def log_error(msg, exc_info=False):
     logger.error(msg, exc_info=exc_info)
 
-# Adjust this to your vLLM container's exposed port
+# Configuration
 VLLM_API_URL = "http://localhost:8002/v1/chat/completions"
 VLLM_MODEL = "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ"
 
@@ -65,6 +62,16 @@ log_info(f"vLLM Model: {VLLM_MODEL}")
 
 server = Server("vllm-delegator")
 
+# Helper function to validate and normalize paths
+def safe_path(base_path: str, target_path: str) -> str:
+    """Validate that target_path is within base_path to prevent directory traversal"""
+    base = Path(base_path).resolve()
+    target = (base / target_path).resolve()
+    
+    if not target.is_relative_to(base):
+        raise ValueError(f"Path {target_path} is outside allowed directory")
+    
+    return str(target)
 @server.list_tools()
 async def list_tools() -> list[Tool]:
     log_info("list_tools() called")
@@ -432,7 +439,7 @@ async def list_tools() -> list[Tool]:
                     "breaking_changes": {
                         "type": "boolean",
                         "description": "Whether this PR contains breaking changes",
-                        "default": false
+                        "default": False
                     }
                 },
                 "required": ["changes_summary", "pr_type"]
@@ -447,7 +454,7 @@ async def list_tools() -> list[Tool]:
                     "porcelain": {
                         "type": "boolean",
                         "description": "Use porcelain format for machine-readable output",
-                        "default": true
+                        "default": True
                     }
                 },
                 "required": []
@@ -481,7 +488,7 @@ async def list_tools() -> list[Tool]:
                     "auto_push": {
                         "type": "boolean",
                         "description": "Automatically push after successful commit",
-                        "default": true
+                        "default": True
                     }
                 },
                 "required": ["message"]
@@ -496,7 +503,7 @@ async def list_tools() -> list[Tool]:
                     "staged": {
                         "type": "boolean",
                         "description": "Show staged changes (--cached)",
-                        "default": false
+                        "default": False
                     },
                     "files": {
                         "type": "array",
@@ -522,7 +529,7 @@ async def list_tools() -> list[Tool]:
                     "oneline": {
                         "type": "boolean",
                         "description": "Show one line per commit",
-                        "default": true
+                        "default": True
                     }
                 },
                 "required": []
@@ -737,7 +744,7 @@ async def list_tools() -> list[Tool]:
                     "execute": {
                         "type": "boolean",
                         "description": "Whether to execute the query (for safe operations only)",
-                        "default": false
+                        "default": False
                     },
                     "database_path": {
                         "type": "string",
@@ -758,7 +765,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     log_debug(f"Arguments: {json.dumps(arguments, indent=2)}")
     
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=180.0) as client:
             
             if name == "generate_simple_code":
                 prompt = f"""You are a code generator. Generate clean, working {arguments.get('language', 'python')} code for the following request.
