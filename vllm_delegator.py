@@ -1,23 +1,24 @@
 # mcp_vllm_delegator.py
 import asyncio
+import hashlib
 import json
 import logging
 import os
+import shutil
+import sqlite3
 import subprocess
 import sys
 import time
-import hashlib
-import shutil
-import sqlite3
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Callable
-from dataclasses import dataclass, asdict
+from typing import Any, Callable, Dict, List, Optional
 
 import httpx
 import yaml
 from mcp.server import Server
 from mcp.types import TextContent, Tool
+
 
 # ========== CONFIGURATION MANAGEMENT ==========
 @dataclass
@@ -28,6 +29,7 @@ class VLLMConfig:
     max_retries: int = 3
     base_delay: float = 1.0
     max_delay: float = 60.0
+
 
 @dataclass
 class SecurityConfig:
@@ -47,8 +49,9 @@ class SecurityConfig:
                 "git": ["status", "add", "commit", "push", "pull", "log", "diff"],
                 "pre-commit": ["run", "install", "autoupdate"],
                 "python": ["-m", "-c"],
-                "make": ["build", "test", "clean", "install"]
+                "make": ["build", "test", "clean", "install"],
             }
+
 
 @dataclass
 class LoggingConfig:
@@ -56,12 +59,14 @@ class LoggingConfig:
     level: str = "INFO"
     file: str = "/tmp/vllm_mcp_delegator.log"
 
+
 @dataclass
 class FeaturesConfig:
     caching: bool = True
     metrics: bool = True
     auto_backup: bool = True
     batch_operations: bool = True
+
 
 @dataclass
 class Config:
@@ -80,31 +85,42 @@ class Config:
         if self.features is None:
             self.features = FeaturesConfig()
 
+
 def load_config() -> Config:
     """Load configuration from file or environment variables"""
     config_file = os.getenv("CONFIG_FILE", "config.yaml")
-    
+
     if os.path.exists(config_file):
         try:
-            with open(config_file, 'r') as f:
+            with open(config_file, "r") as f:
                 config_data = yaml.safe_load(f)
-            return Config(**{k: type(getattr(Config, k)).__call__(**v) if isinstance(v, dict) else v 
-                           for k, v in config_data.items()})
+            return Config(
+                **{
+                    k: type(getattr(Config, k)).__call__(**v)
+                    if isinstance(v, dict)
+                    else v
+                    for k, v in config_data.items()
+                }
+            )
         except Exception as e:
             print(f"Failed to load config file: {e}")
-    
+
     # Fallback to environment variables
     return Config(
         vllm=VLLMConfig(
-            api_url=os.getenv("VLLM_API_URL", "http://localhost:8002/v1/chat/completions"),
-            model=os.getenv("VLLM_MODEL", "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ")
+            api_url=os.getenv(
+                "VLLM_API_URL", "http://localhost:8002/v1/chat/completions"
+            ),
+            model=os.getenv("VLLM_MODEL", "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ"),
         ),
         logging=LoggingConfig(
-            enabled=os.getenv("LOGGING_ON", "true").lower() in ("true", "1", "yes", "on"),
+            enabled=os.getenv("LOGGING_ON", "true").lower()
+            in ("true", "1", "yes", "on"),
             level=os.getenv("LOG_LEVEL", "INFO").upper(),
-            file=os.getenv("LOG_FILE", "/tmp/vllm_mcp_delegator.log")
-        )
+            file=os.getenv("LOG_FILE", "/tmp/vllm_mcp_delegator.log"),
+        ),
     )
+
 
 # Load global configuration
 CONFIG = load_config()
@@ -118,7 +134,10 @@ if CONFIG.logging.enabled:
     logging.basicConfig(
         level=getattr(logging, CONFIG.logging.level, logging.INFO),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[logging.FileHandler(CONFIG.logging.file), logging.StreamHandler(sys.stderr)],
+        handlers=[
+            logging.FileHandler(CONFIG.logging.file),
+            logging.StreamHandler(sys.stderr),
+        ],
     )
     logger = logging.getLogger(__name__)
     logger.info("=" * 50)
@@ -134,16 +153,20 @@ else:
     )
     logger = logging.getLogger(__name__)
 
+
 def log_info(msg):
     if CONFIG.logging.enabled:
         logger.info(msg)
+
 
 def log_debug(msg):
     if CONFIG.logging.enabled:
         logger.debug(msg)
 
+
 def log_error(msg, exc_info=False):
     logger.error(msg, exc_info=exc_info)
+
 
 # ========== METRICS AND MONITORING ==========
 @dataclass
@@ -159,36 +182,43 @@ class ToolMetrics:
         if self.timestamp is None:
             self.timestamp = datetime.now().isoformat()
 
+
 class MetricsCollector:
     def __init__(self):
         self.metrics: List[ToolMetrics] = []
         self.max_metrics = 1000  # Keep last 1000 metrics
 
-    def record_execution(self, tool_name: str, start_time: float, success: bool, **kwargs):
+    def record_execution(
+        self, tool_name: str, start_time: float, success: bool, **kwargs
+    ):
         if CONFIG.features.metrics:
             metric = ToolMetrics(
                 tool_name=tool_name,
                 execution_time=time.time() - start_time,
                 success=success,
-                **kwargs
+                **kwargs,
             )
             self.metrics.append(metric)
             # Keep only recent metrics
             if len(self.metrics) > self.max_metrics:
-                self.metrics = self.metrics[-self.max_metrics:]
+                self.metrics = self.metrics[-self.max_metrics :]
 
     def get_stats(self) -> Dict:
         if not self.metrics:
             return {"total_calls": 0}
-        
+
         total_calls = len(self.metrics)
         successful_calls = sum(1 for m in self.metrics if m.success)
         avg_execution_time = sum(m.execution_time for m in self.metrics) / total_calls
-        
+
         tool_stats = {}
         for metric in self.metrics:
             if metric.tool_name not in tool_stats:
-                tool_stats[metric.tool_name] = {"calls": 0, "successes": 0, "avg_time": 0}
+                tool_stats[metric.tool_name] = {
+                    "calls": 0,
+                    "successes": 0,
+                    "avg_time": 0,
+                }
             tool_stats[metric.tool_name]["calls"] += 1
             if metric.success:
                 tool_stats[metric.tool_name]["successes"] += 1
@@ -198,10 +228,16 @@ class MetricsCollector:
             "success_rate": successful_calls / total_calls if total_calls > 0 else 0,
             "avg_execution_time": avg_execution_time,
             "tool_stats": tool_stats,
-            "recent_errors": [m.error_type for m in self.metrics[-10:] if not m.success and m.error_type]
+            "recent_errors": [
+                m.error_type
+                for m in self.metrics[-10:]
+                if not m.success and m.error_type
+            ],
         }
 
+
 metrics_collector = MetricsCollector()
+
 
 # ========== SECURITY UTILITIES ==========
 def safe_path(base_path: str, target_path: str) -> str:
@@ -211,30 +247,32 @@ def safe_path(base_path: str, target_path: str) -> str:
 
     if not target.is_relative_to(base):
         raise ValueError(f"Path {target_path} is outside allowed directory")
-    
+
     # Additional check against configured allowed paths
     for allowed_path in CONFIG.security.allowed_paths:
         allowed = Path(allowed_path).resolve()
         if target.is_relative_to(allowed):
             return str(target)
-    
+
     raise ValueError(f"Path {target_path} is not in allowed directories")
+
 
 def validate_command(cmd_parts: List[str]) -> bool:
     """Validate command against allowed commands"""
     if not cmd_parts:
         return False
-    
+
     base_cmd = cmd_parts[0]
     if base_cmd not in CONFIG.security.allowed_commands:
         return False
-    
+
     # Check if subcommand is allowed
     allowed_subcmds = CONFIG.security.allowed_commands[base_cmd]
     if len(cmd_parts) > 1 and cmd_parts[1] not in allowed_subcmds:
         return False
-    
+
     return True
+
 
 def validate_file_size(file_path: str) -> bool:
     """Check if file size is within limits"""
@@ -244,15 +282,17 @@ def validate_file_size(file_path: str) -> bool:
     except OSError:
         return False
 
+
 def validate_llm_response(content: str, original_content: str = "") -> bool:
     """Validate LLM response for safety"""
     if len(content) > CONFIG.security.max_response_length:
         raise ValueError("LLM response too large")
-    
+
     if original_content and len(content) < len(original_content) * 0.3:
         raise ValueError("LLM response suspiciously short")
-    
+
     return True
+
 
 def create_backup(file_path: str) -> str:
     """Create backup of file before modification"""
@@ -262,6 +302,7 @@ def create_backup(file_path: str) -> str:
         return backup_path
     return None
 
+
 # ========== ERROR HANDLING ==========
 class ToolError(Exception):
     def __init__(self, tool_name: str, error: str, context: dict = None):
@@ -270,38 +311,46 @@ class ToolError(Exception):
         self.context = context or {}
         super().__init__(f"{tool_name}: {error}")
 
+
 def create_error_response(tool_name: str, error: str, context: dict = None):
-    return [TextContent(
-        type="text",
-        text=json.dumps({
-            "ok": False,
-            "tool": tool_name,
-            "error": error,
-            "context": context,
-            "timestamp": datetime.now().isoformat()
-        }, indent=2)
-    )]
+    return [
+        TextContent(
+            type="text",
+            text=json.dumps(
+                {
+                    "ok": False,
+                    "tool": tool_name,
+                    "error": error,
+                    "context": context,
+                    "timestamp": datetime.now().isoformat(),
+                },
+                indent=2,
+            ),
+        )
+    ]
+
 
 async def retry_with_backoff(
     func: Callable,
     max_retries: int = None,
     base_delay: float = None,
-    max_delay: float = None
+    max_delay: float = None,
 ) -> Any:
     """Execute function with exponential backoff retry"""
     max_retries = max_retries or CONFIG.vllm.max_retries
     base_delay = base_delay or CONFIG.vllm.base_delay
     max_delay = max_delay or CONFIG.vllm.max_delay
-    
+
     for attempt in range(max_retries):
         try:
             return await func()
         except (httpx.TimeoutException, httpx.ConnectError) as e:
             if attempt == max_retries - 1:
                 raise
-            delay = min(base_delay * (2 ** attempt), max_delay)
+            delay = min(base_delay * (2**attempt), max_delay)
             log_debug(f"Retry attempt {attempt + 1}, waiting {delay}s")
             await asyncio.sleep(delay)
+
 
 # ========== VLLM CLIENT MANAGEMENT ==========
 class VLLMClient:
@@ -317,7 +366,7 @@ class VLLMClient:
         if self._client is None:
             self._client = httpx.AsyncClient(
                 timeout=CONFIG.vllm.timeout,
-                limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
+                limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
             )
         return self._client
 
@@ -326,7 +375,9 @@ class VLLMClient:
             await self._client.aclose()
             self._client = None
 
+
 vllm_client = VLLMClient()
+
 
 # ========== CACHING SYSTEM ==========
 class ResponseCache:
@@ -342,94 +393,77 @@ class ResponseCache:
     def get(self, tool_name: str, **kwargs) -> Optional[str]:
         if not CONFIG.features.caching:
             return None
-        
+
         key = self._generate_key(tool_name, **kwargs)
         return self.cache.get(key)
 
     def set(self, tool_name: str, response: str, **kwargs):
         if not CONFIG.features.caching:
             return
-        
+
         key = self._generate_key(tool_name, **kwargs)
         self.cache[key] = response
-        
+
         # Simple LRU: remove oldest entries
         if len(self.cache) > self.max_size:
             oldest_key = next(iter(self.cache))
             del self.cache[oldest_key]
 
+
 response_cache = ResponseCache()
 
 # ========== MODEL CONFIGURATIONS ==========
 MODEL_CONFIGS = {
-    "code_generation": {
-        "temperature": 0.2,
-        "max_tokens": 2000
-    },
-    "documentation": {
-        "temperature": 0.3,
-        "max_tokens": 1500
-    },
-    "analysis": {
-        "temperature": 0.1,
-        "max_tokens": 1000
-    },
-    "git_commit": {
-        "temperature": 0.3,
-        "max_tokens": 200
-    },
-    "explanation": {
-        "temperature": 0.3,
-        "max_tokens": 800
-    }
+    "code_generation": {"temperature": 0.2, "max_tokens": 2000},
+    "documentation": {"temperature": 0.3, "max_tokens": 1500},
+    "analysis": {"temperature": 0.1, "max_tokens": 1000},
+    "git_commit": {"temperature": 0.3, "max_tokens": 200},
+    "explanation": {"temperature": 0.3, "max_tokens": 800},
 }
+
 
 def get_model_config(task_type: str) -> dict:
     """Get model configuration for specific task type"""
     config = MODEL_CONFIGS.get(task_type, MODEL_CONFIGS["code_generation"])
-    return {
-        "model": CONFIG.vllm.model,
-        **config
-    }
+    return {"model": CONFIG.vllm.model, **config}
+
 
 # ========== ENHANCED LLM INTERACTION ==========
 async def call_vllm_api(prompt: str, task_type: str = "code_generation") -> str:
     """Enhanced LLM API call with retry logic and caching"""
-    
+
     # Check cache first
     cached_response = response_cache.get(task_type, prompt=prompt)
     if cached_response:
         log_debug(f"Cache hit for {task_type}")
         return cached_response
-    
+
     config = get_model_config(task_type)
-    
+
     async def make_request():
         client = await vllm_client.get_client()
         response = await client.post(
             CONFIG.vllm.api_url,
-            json={
-                "messages": [{"role": "user", "content": prompt}],
-                **config
-            }
+            json={"messages": [{"role": "user", "content": prompt}], **config},
         )
         response.raise_for_status()
         return response.json()
-    
+
     try:
         result = await retry_with_backoff(make_request)
         content = result["choices"][0]["message"]["content"]
-        
+
         # Validate response
         validate_llm_response(content)
-        
+
         # Cache the response
         response_cache.set(task_type, content, prompt=prompt)
-        
+
         return content
     except Exception as e:
         log_error(f"vLLM API call failed: {e}")
         raise
+
 
 # ========== LANGUAGE DETECTION ==========
 LANGUAGE_CONFIGS = {
@@ -437,41 +471,45 @@ LANGUAGE_CONFIGS = {
         "file_extensions": [".py"],
         "test_framework": "pytest",
         "linter": "flake8",
-        "formatter": "black"
+        "formatter": "black",
     },
     "javascript": {
         "file_extensions": [".js", ".ts", ".jsx", ".tsx"],
         "test_framework": "jest",
         "linter": "eslint",
-        "formatter": "prettier"
+        "formatter": "prettier",
     },
     "rust": {
         "file_extensions": [".rs"],
         "test_framework": "cargo-test",
         "linter": "clippy",
-        "formatter": "rustfmt"
+        "formatter": "rustfmt",
     },
     "go": {
         "file_extensions": [".go"],
         "test_framework": "go test",
         "linter": "golint",
-        "formatter": "gofmt"
-    }
+        "formatter": "gofmt",
+    },
 }
+
 
 def detect_project_language(working_dir: str) -> str:
     """Auto-detect primary project language"""
     file_counts = {}
-    
+
     for lang, config in LANGUAGE_CONFIGS.items():
         count = 0
         for ext in config["file_extensions"]:
             pattern = f"**/*{ext}"
             count += len(list(Path(working_dir).glob(pattern)))
         file_counts[lang] = count
-    
+
     # Return language with most files, or python as default
-    return max(file_counts, key=file_counts.get) if any(file_counts.values()) else "python"
+    return (
+        max(file_counts, key=file_counts.get) if any(file_counts.values()) else "python"
+    )
+
 
 # ========== SERVER INITIALIZATION ==========
 server = Server("vllm-delegator-enhanced")
@@ -479,7 +517,10 @@ server = Server("vllm-delegator-enhanced")
 log_info(f"vLLM API URL: {CONFIG.vllm.api_url}")
 log_info(f"vLLM Model: {CONFIG.vllm.model}")
 log_info(f"Security: Allowed paths: {CONFIG.security.allowed_paths}")
-log_info(f"Features: Caching={CONFIG.features.caching}, Metrics={CONFIG.features.metrics}")
+log_info(
+    f"Features: Caching={CONFIG.features.caching}, Metrics={CONFIG.features.metrics}"
+)
+
 
 # ========== TOOL DEFINITIONS ==========
 @server.list_tools()
@@ -607,7 +648,16 @@ async def list_tools() -> list[Tool]:
                     },
                     "commit_type": {
                         "type": "string",
-                        "enum": ["feat", "fix", "docs", "style", "refactor", "test", "chore", "auto"],
+                        "enum": [
+                            "feat",
+                            "fix",
+                            "docs",
+                            "style",
+                            "refactor",
+                            "test",
+                            "chore",
+                            "auto",
+                        ],
                         "default": "auto",
                     },
                 },
@@ -1387,12 +1437,20 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "code": {"type": "string", "description": "Code to analyze for refactoring"},
+                    "code": {
+                        "type": "string",
+                        "description": "Code to analyze for refactoring",
+                    },
                     "refactoring_types": {
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "Types of refactoring to look for",
-                        "default": ["extract_method", "reduce_complexity", "remove_duplication", "improve_naming"],
+                        "default": [
+                            "extract_method",
+                            "reduce_complexity",
+                            "remove_duplication",
+                            "improve_naming",
+                        ],
                     },
                     "complexity_threshold": {
                         "type": "integer",
@@ -1414,7 +1472,10 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "code": {"type": "string", "description": "Code to analyze for performance"},
+                    "code": {
+                        "type": "string",
+                        "description": "Code to analyze for performance",
+                    },
                     "language": {
                         "type": "string",
                         "description": "Programming language",
@@ -1422,7 +1483,13 @@ async def list_tools() -> list[Tool]:
                     },
                     "performance_context": {
                         "type": "string",
-                        "enum": ["web_api", "data_processing", "real_time", "batch_processing", "general"],
+                        "enum": [
+                            "web_api",
+                            "data_processing",
+                            "real_time",
+                            "batch_processing",
+                            "general",
+                        ],
                         "default": "general",
                         "description": "Performance context for analysis",
                     },
@@ -1430,7 +1497,12 @@ async def list_tools() -> list[Tool]:
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "Performance areas to focus on",
-                        "default": ["time_complexity", "space_complexity", "io_operations", "database_queries"],
+                        "default": [
+                            "time_complexity",
+                            "space_complexity",
+                            "io_operations",
+                            "database_queries",
+                        ],
                     },
                 },
                 "required": ["code"],
@@ -1442,7 +1514,10 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "code": {"type": "string", "description": "Code containing API definitions"},
+                    "code": {
+                        "type": "string",
+                        "description": "Code containing API definitions",
+                    },
                     "doc_format": {
                         "type": "string",
                         "enum": ["openapi", "markdown", "jsdoc", "rustdoc", "sphinx"],
@@ -1469,16 +1544,30 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "code": {"type": "string", "description": "Code to generate integration tests for"},
+                    "code": {
+                        "type": "string",
+                        "description": "Code to generate integration tests for",
+                    },
                     "test_scenarios": {
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "Test scenarios to cover",
-                        "default": ["happy_path", "error_cases", "edge_cases", "authentication"],
+                        "default": [
+                            "happy_path",
+                            "error_cases",
+                            "edge_cases",
+                            "authentication",
+                        ],
                     },
                     "framework": {
                         "type": "string",
-                        "enum": ["pytest", "unittest", "jest", "supertest", "testcontainers"],
+                        "enum": [
+                            "pytest",
+                            "unittest",
+                            "jest",
+                            "supertest",
+                            "testcontainers",
+                        ],
                         "default": "pytest",
                         "description": "Testing framework to use",
                     },
@@ -1502,12 +1591,21 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "code": {"type": "string", "description": "Code to scan for security issues"},
+                    "code": {
+                        "type": "string",
+                        "description": "Code to scan for security issues",
+                    },
                     "vulnerability_types": {
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "Types of vulnerabilities to check for",
-                        "default": ["injection", "authentication", "authorization", "crypto", "input_validation"],
+                        "default": [
+                            "injection",
+                            "authentication",
+                            "authorization",
+                            "crypto",
+                            "input_validation",
+                        ],
                     },
                     "language": {
                         "type": "string",
@@ -1543,7 +1641,12 @@ async def list_tools() -> list[Tool]:
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "Types of fixtures to generate",
-                        "default": ["mock_data", "test_objects", "api_responses", "database_records"],
+                        "default": [
+                            "mock_data",
+                            "test_objects",
+                            "api_responses",
+                            "database_records",
+                        ],
                     },
                     "framework": {
                         "type": "string",
@@ -1567,7 +1670,10 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "code": {"type": "string", "description": "Code to add type annotations to"},
+                    "code": {
+                        "type": "string",
+                        "description": "Code to add type annotations to",
+                    },
                     "annotation_style": {
                         "type": "string",
                         "enum": ["basic", "comprehensive", "gradual"],
@@ -1595,7 +1701,10 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "code": {"type": "string", "description": "Code with imports to optimize"},
+                    "code": {
+                        "type": "string",
+                        "description": "Code with imports to optimize",
+                    },
                     "optimization_types": {
                         "type": "array",
                         "items": {"type": "string"},
@@ -1621,6 +1730,7 @@ async def list_tools() -> list[Tool]:
     log_info(f"Returning {len(tools)} tools")
     return tools
 
+
 # ========== TOOL IMPLEMENTATIONS ==========
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
@@ -1631,46 +1741,50 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     try:
         if name == "health_check":
             checks = {}
-            
+
             # Check vLLM connection
             try:
                 client = await vllm_client.get_client()
-                response = await client.get(CONFIG.vllm.api_url.replace("/chat/completions", "/models"))
+                response = await client.get(
+                    CONFIG.vllm.api_url.replace("/chat/completions", "/models")
+                )
                 checks["vllm_connection"] = {
                     "status": "healthy" if response.status_code == 200 else "unhealthy",
-                    "response_time": response.elapsed.total_seconds() if hasattr(response, 'elapsed') else 0
+                    "response_time": response.elapsed.total_seconds()
+                    if hasattr(response, "elapsed")
+                    else 0,
                 }
             except Exception as e:
                 checks["vllm_connection"] = {"status": "unhealthy", "error": str(e)}
-            
+
             # Check disk space
             try:
-                statvfs = os.statvfs('.')
+                statvfs = os.statvfs(".")
                 free_space = statvfs.f_frsize * statvfs.f_bavail
                 checks["disk_space"] = {
                     "free_bytes": free_space,
-                    "free_gb": round(free_space / (1024**3), 2)
+                    "free_gb": round(free_space / (1024**3), 2),
                 }
             except Exception as e:
                 checks["disk_space"] = {"error": str(e)}
-            
+
             # Get metrics
             checks["metrics"] = metrics_collector.get_stats()
-            
+
             # Configuration summary
             checks["configuration"] = {
                 "caching_enabled": CONFIG.features.caching,
                 "metrics_enabled": CONFIG.features.metrics,
                 "auto_backup_enabled": CONFIG.features.auto_backup,
-                "allowed_paths": len(CONFIG.security.allowed_paths)
+                "allowed_paths": len(CONFIG.security.allowed_paths),
             }
-            
+
             metrics_collector.record_execution(name, start_time, True)
             return [TextContent(type="text", text=json.dumps(checks, indent=2))]
 
         elif name == "generate_simple_code":
-            language = arguments.get('language', 'python')
-            
+            language = arguments.get("language", "python")
+
             prompt = f"""You are a code generator. Generate clean, working {language} code for the following request.
 Only output the code, no explanations unless asked.
 
@@ -1678,9 +1792,11 @@ Request: {arguments['prompt']}"""
 
             log_info("Calling vLLM API for generate_simple_code")
             code = await call_vllm_api(prompt, "code_generation")
-            
+
             log_info(f"Generated {len(code)} characters of code")
-            metrics_collector.record_execution(name, start_time, True, tokens_used=len(code.split()))
+            metrics_collector.record_execution(
+                name, start_time, True, tokens_used=len(code.split())
+            )
             return [TextContent(type="text", text=code)]
 
         elif name == "complete_code":
@@ -1695,53 +1811,68 @@ Provide only the completion, maintaining the existing code style."""
 
             log_info("Calling vLLM API for complete_code")
             completion = await call_vllm_api(prompt, "code_generation")
-            
+
             log_info(f"Generated {len(completion)} characters of completion")
-            metrics_collector.record_execution(name, start_time, True, tokens_used=len(completion.split()))
+            metrics_collector.record_execution(
+                name, start_time, True, tokens_used=len(completion.split())
+            )
             return [TextContent(type="text", text=completion)]
 
         elif name == "explain_code":
-            detail = "briefly" if arguments.get("detail_level") == "brief" else "in detail"
+            detail = (
+                "briefly" if arguments.get("detail_level") == "brief" else "in detail"
+            )
             prompt = f"""Explain {detail} what this code does:
 
 {arguments['code']}"""
 
             log_info("Calling vLLM API for explain_code")
             explanation = await call_vllm_api(prompt, "explanation")
-            
+
             log_info(f"Generated {len(explanation)} characters of explanation")
             metrics_collector.record_execution(name, start_time, True)
             return [TextContent(type="text", text=explanation)]
 
         elif name == "analyze_codebase":
-            directory = arguments.get('directory', '.')
-            analysis_type = arguments.get('analysis_type', 'structure')
-            
+            directory = arguments.get("directory", ".")
+            analysis_type = arguments.get("analysis_type", "structure")
+
             # Validate directory path
             try:
                 safe_dir = safe_path(".", directory)
             except ValueError as e:
-                metrics_collector.record_execution(name, start_time, False, error_type="security_error")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="security_error"
+                )
                 return create_error_response(name, str(e))
-            
+
             # Collect codebase information
             try:
                 file_info = []
                 for root, dirs, files in os.walk(safe_dir):
                     for file in files:
-                        if any(file.endswith(ext) for ext_list in [config["file_extensions"] for config in LANGUAGE_CONFIGS.values()] for ext in ext_list):
+                        if any(
+                            file.endswith(ext)
+                            for ext_list in [
+                                config["file_extensions"]
+                                for config in LANGUAGE_CONFIGS.values()
+                            ]
+                            for ext in ext_list
+                        ):
                             file_path = os.path.join(root, file)
                             relative_path = os.path.relpath(file_path, safe_dir)
                             try:
-                                with open(file_path, 'r', encoding='utf-8') as f:
+                                with open(file_path, "r", encoding="utf-8") as f:
                                     lines = len(f.readlines())
-                                file_info.append({"path": relative_path, "lines": lines})
+                                file_info.append(
+                                    {"path": relative_path, "lines": lines}
+                                )
                             except:
                                 continue
-                
+
                 # Detect primary language
                 primary_language = detect_project_language(safe_dir)
-                
+
                 prompt = f"""Analyze this {primary_language} codebase for {analysis_type}.
 
 Files and structure:
@@ -1761,27 +1892,31 @@ Primary language: {primary_language}"""
 
                 log_info(f"Analyzing codebase: {len(file_info)} files")
                 analysis = await call_vllm_api(prompt, "analysis")
-                
+
                 result = {
                     "analysis": analysis,
                     "metadata": {
                         "directory": directory,
                         "files_found": len(file_info),
                         "primary_language": primary_language,
-                        "analysis_type": analysis_type
-                    }
+                        "analysis_type": analysis_type,
+                    },
                 }
-                
+
                 metrics_collector.record_execution(name, start_time, True)
                 return [TextContent(type="text", text=json.dumps(result, indent=2))]
-                
+
             except Exception as e:
-                metrics_collector.record_execution(name, start_time, False, error_type="analysis_error")
-                return create_error_response(name, f"Codebase analysis failed: {str(e)}")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="analysis_error"
+                )
+                return create_error_response(
+                    name, f"Codebase analysis failed: {str(e)}"
+                )
 
         elif name == "detect_code_smells":
-            language = arguments.get('language', 'python')
-            
+            language = arguments.get("language", "python")
+
             prompt = f"""Analyze this {language} code for potential quality issues and code smells.
 
 Code to analyze:
@@ -1801,45 +1936,44 @@ Provide specific recommendations for improvement with examples where possible.""
 
             log_info("Analyzing code for smells")
             analysis = await call_vllm_api(prompt, "analysis")
-            
+
             metrics_collector.record_execution(name, start_time, True)
             return [TextContent(type="text", text=analysis)]
 
         elif name == "git_smart_commit":
-            auto_push = arguments.get('auto_push', True)
-            commit_type = arguments.get('commit_type', 'auto')
-            
+            auto_push = arguments.get("auto_push", True)
+            commit_type = arguments.get("commit_type", "auto")
+
             try:
                 # Get git diff
                 diff_result = subprocess.run(
                     ["git", "diff", "--cached"],
                     capture_output=True,
                     text=True,
-                    check=True
+                    check=True,
                 )
-                
+
                 if not diff_result.stdout.strip():
                     # Nothing staged, check working directory
                     diff_result = subprocess.run(
-                        ["git", "diff"],
-                        capture_output=True,
-                        text=True,
-                        check=True
+                        ["git", "diff"], capture_output=True, text=True, check=True
                     )
-                    
+
                     if not diff_result.stdout.strip():
-                        metrics_collector.record_execution(name, start_time, False, error_type="no_changes")
+                        metrics_collector.record_execution(
+                            name, start_time, False, error_type="no_changes"
+                        )
                         return create_error_response(name, "No changes to commit")
-                    
+
                     # Auto-stage all changes
                     subprocess.run(["git", "add", "."], check=True)
-                    
+
                     # Get staged diff
                     diff_result = subprocess.run(
                         ["git", "diff", "--cached"],
                         capture_output=True,
                         text=True,
-                        check=True
+                        check=True,
                     )
 
                 # Generate commit message
@@ -1848,7 +1982,7 @@ Provide specific recommendations for improvement with examples where possible.""
                     if commit_type != "auto"
                     else "Choose appropriate commit type (feat, fix, docs, style, refactor, test, chore)"
                 )
-                
+
                 prompt = f"""Generate a conventional commit message for these changes.
 
 {type_instruction}.
@@ -1863,21 +1997,21 @@ Provide only the commit message, no explanations. Make it concise but descriptiv
                 log_info("Generating smart commit message")
                 commit_message = await call_vllm_api(prompt, "git_commit")
                 commit_message = commit_message.strip()
-                
+
                 # Execute commit
                 commit_result = subprocess.run(
                     ["git", "commit", "-m", commit_message],
                     capture_output=True,
                     text=True,
-                    check=True
+                    check=True,
                 )
-                
+
                 response_data = {
                     "ok": True,
                     "commit_message": commit_message,
                     "commit_output": commit_result.stdout.strip(),
                 }
-                
+
                 # Auto-push if enabled
                 if auto_push:
                     try:
@@ -1885,24 +2019,25 @@ Provide only the commit message, no explanations. Make it concise but descriptiv
                             ["git", "push", "origin", "HEAD"],
                             capture_output=True,
                             text=True,
-                            check=True
+                            check=True,
                         )
                         response_data["push"] = {
                             "ok": True,
-                            "output": push_result.stdout.strip()
+                            "output": push_result.stdout.strip(),
                         }
                     except subprocess.CalledProcessError as e:
-                        response_data["push"] = {
-                            "ok": False,
-                            "error": e.stderr
-                        }
-                
+                        response_data["push"] = {"ok": False, "error": e.stderr}
+
                 metrics_collector.record_execution(name, start_time, True)
-                return [TextContent(type="text", text=json.dumps(response_data, indent=2))]
-                
+                return [
+                    TextContent(type="text", text=json.dumps(response_data, indent=2))
+                ]
+
             except subprocess.CalledProcessError as e:
                 error_msg = f"Git operation failed: {e.stderr}"
-                metrics_collector.record_execution(name, start_time, False, error_type="git_error")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="git_error"
+                )
                 return create_error_response(name, error_msg)
 
         elif name == "generate_docstrings":
@@ -1916,7 +2051,7 @@ Follow {style} documentation standards for {language}. Include parameter descrip
 
             log_info("Calling vLLM API for generate_docstrings")
             documented_code = await call_vllm_api(prompt, "documentation")
-            
+
             log_info(f"Generated {len(documented_code)} characters of documented code")
             metrics_collector.record_execution(name, start_time, True)
             return [TextContent(type="text", text=documented_code)]
@@ -1940,7 +2075,7 @@ Generate complete, runnable test code."""
 
             log_info("Calling vLLM API for generate_tests")
             tests = await call_vllm_api(prompt, "code_generation")
-            
+
             log_info(f"Generated {len(tests)} characters of tests")
             metrics_collector.record_execution(name, start_time, True)
             return [TextContent(type="text", text=tests)]
@@ -1959,7 +2094,7 @@ Provide the refactored code, maintaining functionality."""
 
             log_info("Calling vLLM API for refactor_simple_code")
             refactored = await call_vllm_api(prompt, "code_generation")
-            
+
             log_info(f"Generated {len(refactored)} characters of refactored code")
             metrics_collector.record_execution(name, start_time, True)
             return [TextContent(type="text", text=refactored)]
@@ -1980,7 +2115,7 @@ Provide the corrected code with a brief explanation of the fix."""
 
             log_info("Calling vLLM API for fix_simple_bugs")
             fixed_code = await call_vllm_api(prompt, "code_generation")
-            
+
             log_info(f"Generated {len(fixed_code)} characters of fixed code")
             metrics_collector.record_execution(name, start_time, True)
             return [TextContent(type="text", text=fixed_code)]
@@ -1995,7 +2130,7 @@ Provide only the converted code."""
 
             log_info("Calling vLLM API for convert_code_format")
             converted = await call_vllm_api(prompt, "code_generation")
-            
+
             log_info(f"Generated {len(converted)} characters of converted code")
             metrics_collector.record_execution(name, start_time, True)
             return [TextContent(type="text", text=converted)]
@@ -2011,7 +2146,7 @@ Generate production-ready, well-structured boilerplate code."""
 
             log_info("Calling vLLM API for generate_boilerplate_file")
             boilerplate = await call_vllm_api(prompt, "code_generation")
-            
+
             log_info(f"Generated {len(boilerplate)} characters of boilerplate")
             metrics_collector.record_execution(name, start_time, True)
             return [TextContent(type="text", text=boilerplate)]
@@ -2030,7 +2165,7 @@ Provide the improved code."""
 
             log_info("Calling vLLM API for improve_code_style")
             improved = await call_vllm_api(prompt, "code_generation")
-            
+
             log_info(f"Generated {len(improved)} characters of improved code")
             metrics_collector.record_execution(name, start_time, True)
             return [TextContent(type="text", text=improved)]
@@ -2046,7 +2181,7 @@ Generate complete, well-typed schema code."""
 
             log_info("Calling vLLM API for generate_schema")
             schema = await call_vllm_api(prompt, "code_generation")
-            
+
             log_info(f"Generated {len(schema)} characters of schema")
             metrics_collector.record_execution(name, start_time, True)
             return [TextContent(type="text", text=schema)]
@@ -2076,7 +2211,7 @@ Provide only the commit message, no explanations."""
             log_info("Calling vLLM API for generate_git_commit_message")
             commit_message = await call_vllm_api(prompt, "git_commit")
             commit_message = commit_message.strip()
-            
+
             log_info(f"Generated commit message: {commit_message[:50]}...")
             metrics_collector.record_execution(name, start_time, True)
             return [TextContent(type="text", text=commit_message)]
@@ -2098,7 +2233,7 @@ Provide only the .gitignore content, no explanations."""
 
             log_info("Calling vLLM API for generate_gitignore")
             gitignore = await call_vllm_api(prompt, "code_generation")
-            
+
             log_info(f"Generated {len(gitignore)} characters of .gitignore")
             metrics_collector.record_execution(name, start_time, True)
             return [TextContent(type="text", text=gitignore)]
@@ -2125,7 +2260,7 @@ Provide only the YAML content, no explanations."""
 
             log_info("Calling vLLM API for generate_github_workflow")
             workflow = await call_vllm_api(prompt, "code_generation")
-            
+
             log_info(f"Generated {len(workflow)} characters of workflow")
             metrics_collector.record_execution(name, start_time, True)
             return [TextContent(type="text", text=workflow)]
@@ -2136,9 +2271,7 @@ Provide only the YAML content, no explanations."""
 
             context_str = f"\n\nContext: {context}" if context else ""
             breaking_str = (
-                "\n\n⚠️ This PR contains BREAKING CHANGES"
-                if breaking_changes
-                else ""
+                "\n\n⚠️ This PR contains BREAKING CHANGES" if breaking_changes else ""
             )
 
             prompt = f"""Generate a comprehensive pull request description for a {arguments['pr_type']} PR.
@@ -2157,7 +2290,7 @@ Use markdown formatting."""
 
             log_info("Calling vLLM API for generate_pr_description")
             pr_description = await call_vllm_api(prompt, "documentation")
-            
+
             log_info(f"Generated {len(pr_description)} characters of PR description")
             metrics_collector.record_execution(name, start_time, True)
             return [TextContent(type="text", text=pr_description)]
@@ -2170,9 +2303,7 @@ Use markdown formatting."""
 
             log_info(f"Executing: {' '.join(cmd)}")
             try:
-                result = subprocess.run(
-                    cmd, capture_output=True, text=True, check=True
-                )
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
                 output = result.stdout.strip()
                 log_info(f"Git status completed successfully")
 
@@ -2224,22 +2355,24 @@ Use markdown formatting."""
             except subprocess.CalledProcessError as e:
                 error_msg = f"Git status failed: {e.stderr}"
                 log_error(error_msg)
-                metrics_collector.record_execution(name, start_time, False, error_type="git_error")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="git_error"
+                )
                 return create_error_response(name, error_msg)
 
         elif name == "git_add":
             files = arguments.get("files", [])
             if not files:
-                metrics_collector.record_execution(name, start_time, False, error_type="missing_args")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="missing_args"
+                )
                 return create_error_response(name, "No files specified")
 
             cmd = ["git", "add"] + files
             log_info(f"Executing: {' '.join(cmd)}")
 
             try:
-                result = subprocess.run(
-                    cmd, capture_output=True, text=True, check=True
-                )
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
                 log_info(f"Git add completed successfully")
                 response_data = {
                     "ok": True,
@@ -2248,15 +2381,15 @@ Use markdown formatting."""
                 }
                 metrics_collector.record_execution(name, start_time, True)
                 return [
-                    TextContent(
-                        type="text", text=json.dumps(response_data, indent=2)
-                    )
+                    TextContent(type="text", text=json.dumps(response_data, indent=2))
                 ]
 
             except subprocess.CalledProcessError as e:
                 error_msg = f"Git add failed: {e.stderr}"
                 log_error(error_msg)
-                metrics_collector.record_execution(name, start_time, False, error_type="git_error")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="git_error"
+                )
                 return create_error_response(name, error_msg)
 
         elif name == "git_commit":
@@ -2264,16 +2397,16 @@ Use markdown formatting."""
             auto_push = arguments.get("auto_push", True)
 
             if not message:
-                metrics_collector.record_execution(name, start_time, False, error_type="missing_args")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="missing_args"
+                )
                 return create_error_response(name, "Commit message required")
 
             cmd = ["git", "commit", "-m", message]
             log_info(f"Executing: git commit -m '[message]'")
 
             try:
-                result = subprocess.run(
-                    cmd, capture_output=True, text=True, check=True
-                )
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
                 log_info(f"Git commit completed successfully")
 
                 response_data = {
@@ -2307,15 +2440,15 @@ Use markdown formatting."""
 
                 metrics_collector.record_execution(name, start_time, True)
                 return [
-                    TextContent(
-                        type="text", text=json.dumps(response_data, indent=2)
-                    )
+                    TextContent(type="text", text=json.dumps(response_data, indent=2))
                 ]
 
             except subprocess.CalledProcessError as e:
                 error_msg = f"Git commit failed: {e.stderr}"
                 log_error(error_msg)
-                metrics_collector.record_execution(name, start_time, False, error_type="git_error")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="git_error"
+                )
                 return create_error_response(name, error_msg)
 
         elif name == "git_diff":
@@ -2330,9 +2463,7 @@ Use markdown formatting."""
             log_info(f"Executing: {' '.join(cmd)}")
 
             try:
-                result = subprocess.run(
-                    cmd, capture_output=True, text=True, check=True
-                )
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
                 output = result.stdout.strip()
                 log_info(f"Git diff completed successfully")
                 metrics_collector.record_execution(name, start_time, True)
@@ -2346,7 +2477,9 @@ Use markdown formatting."""
             except subprocess.CalledProcessError as e:
                 error_msg = f"Git diff failed: {e.stderr}"
                 log_error(error_msg)
-                metrics_collector.record_execution(name, start_time, False, error_type="git_error")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="git_error"
+                )
                 return create_error_response(name, error_msg)
 
         elif name == "git_log":
@@ -2360,9 +2493,7 @@ Use markdown formatting."""
             log_info(f"Executing: {' '.join(cmd)}")
 
             try:
-                result = subprocess.run(
-                    cmd, capture_output=True, text=True, check=True
-                )
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
                 output = result.stdout.strip()
                 log_info(f"Git log completed successfully")
                 metrics_collector.record_execution(name, start_time, True)
@@ -2375,7 +2506,9 @@ Use markdown formatting."""
             except subprocess.CalledProcessError as e:
                 error_msg = f"Git log failed: {e.stderr}"
                 log_error(error_msg)
-                metrics_collector.record_execution(name, start_time, False, error_type="git_error")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="git_error"
+                )
                 return create_error_response(name, error_msg)
 
         elif name == "create_config_file":
@@ -2388,12 +2521,18 @@ Use markdown formatting."""
             try:
                 safe_file_path = safe_path(".", path)
             except ValueError as e:
-                metrics_collector.record_execution(name, start_time, False, error_type="security_error")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="security_error"
+                )
                 return create_error_response(name, str(e))
 
             if file_type == "custom" and not custom_prompt:
-                metrics_collector.record_execution(name, start_time, False, error_type="missing_args")
-                return create_error_response(name, "Custom prompt required for custom file type")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="missing_args"
+                )
+                return create_error_response(
+                    name, "Custom prompt required for custom file type"
+                )
 
             # Generate file content using LLM
             if file_type == "custom":
@@ -2428,7 +2567,7 @@ Provide only the file content, no explanations."""
                 }
                 if backup_path:
                     response_data["backup_created"] = backup_path
-                    
+
                 metrics_collector.record_execution(name, start_time, True)
                 return [
                     TextContent(
@@ -2440,7 +2579,9 @@ Provide only the file content, no explanations."""
             except Exception as e:
                 error_msg = f"Failed to write file {safe_file_path}: {str(e)}"
                 log_error(error_msg)
-                metrics_collector.record_execution(name, start_time, False, error_type="file_error")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="file_error"
+                )
                 return create_error_response(name, error_msg)
 
         elif name == "create_directory_structure":
@@ -2453,7 +2594,9 @@ Provide only the file content, no explanations."""
             try:
                 safe_base_path = safe_path(".", base_path)
             except ValueError as e:
-                metrics_collector.record_execution(name, start_time, False, error_type="security_error")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="security_error"
+                )
                 return create_error_response(name, str(e))
 
             options_str = (
@@ -2503,8 +2646,12 @@ Provide only the JSON array, no explanations."""
             except (json.JSONDecodeError, Exception) as e:
                 error_msg = f"Failed to create directory structure: {str(e)}"
                 log_error(error_msg)
-                metrics_collector.record_execution(name, start_time, False, error_type="structure_error")
-                return create_error_response(name, error_msg, {"raw_response": directories_json})
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="structure_error"
+                )
+                return create_error_response(
+                    name, error_msg, {"raw_response": directories_json}
+                )
 
         elif name == "create_github_issue":
             repository = arguments["repository"]
@@ -2605,7 +2752,9 @@ Use markdown formatting. Provide only the PR description content."""
             try:
                 safe_working_dir = safe_path(".", working_dir)
             except ValueError as e:
-                metrics_collector.record_execution(name, start_time, False, error_type="security_error")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="security_error"
+                )
                 return create_error_response(name, str(e))
 
             # Map command types to actual commands
@@ -2622,18 +2771,26 @@ Use markdown formatting. Provide only the PR description content."""
 
             if command_type == "custom":
                 if not custom_command:
-                    metrics_collector.record_execution(name, start_time, False, error_type="missing_args")
+                    metrics_collector.record_execution(
+                        name, start_time, False, error_type="missing_args"
+                    )
                     return create_error_response(name, "Custom command required")
                 cmd = custom_command.split() + args
             else:
                 cmd = command_map.get(command_type)
                 if not cmd:
-                    metrics_collector.record_execution(name, start_time, False, error_type="invalid_command")
-                    return create_error_response(name, f"Unknown command type: {command_type}")
+                    metrics_collector.record_execution(
+                        name, start_time, False, error_type="invalid_command"
+                    )
+                    return create_error_response(
+                        name, f"Unknown command type: {command_type}"
+                    )
 
             # Validate command
             if not validate_command(cmd):
-                metrics_collector.record_execution(name, start_time, False, error_type="security_error")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="security_error"
+                )
                 return create_error_response(name, f"Command not allowed: {cmd[0]}")
 
             log_info(f"Executing: {' '.join(cmd)} in {safe_working_dir}")
@@ -2658,26 +2815,30 @@ Use markdown formatting. Provide only the PR description content."""
 
                 if result.returncode != 0:
                     log_error(f"Command failed with return code {result.returncode}")
-                    metrics_collector.record_execution(name, start_time, False, error_type="command_failed")
+                    metrics_collector.record_execution(
+                        name, start_time, False, error_type="command_failed"
+                    )
                 else:
                     log_info(f"Command executed successfully")
                     metrics_collector.record_execution(name, start_time, True)
 
                 return [
-                    TextContent(
-                        type="text", text=json.dumps(response_data, indent=2)
-                    )
+                    TextContent(type="text", text=json.dumps(response_data, indent=2))
                 ]
 
             except subprocess.TimeoutExpired:
                 error_msg = "Command timed out after 5 minutes"
                 log_error(error_msg)
-                metrics_collector.record_execution(name, start_time, False, error_type="timeout")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="timeout"
+                )
                 return create_error_response(name, error_msg)
             except Exception as e:
                 error_msg = f"Command execution failed: {str(e)}"
                 log_error(error_msg)
-                metrics_collector.record_execution(name, start_time, False, error_type="execution_error")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="execution_error"
+                )
                 return create_error_response(name, error_msg)
 
         elif name == "create_database_schema":
@@ -2689,7 +2850,9 @@ Use markdown formatting. Provide only the PR description content."""
             try:
                 safe_db_path = safe_path(".", database_path)
             except ValueError as e:
-                metrics_collector.record_execution(name, start_time, False, error_type="security_error")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="security_error"
+                )
                 return create_error_response(name, str(e))
 
             tables_info = (
@@ -2729,7 +2892,7 @@ Provide only the SQL statements, properly formatted."""
                 "tables_count": len(tables),
                 "note": "Schema SQL generated. Use SQLite MCP server to actually execute the schema creation.",
             }
-            
+
             log_info(f"Generated schema SQL for {safe_db_path}")
             metrics_collector.record_execution(name, start_time, True)
             return [
@@ -2770,7 +2933,9 @@ Provide only the SQL query, properly formatted."""
             }
 
             if execute and database_path:
-                response_data["note"] = "Query generated. Use SQLite MCP server to execute if needed."
+                response_data[
+                    "note"
+                ] = "Query generated. Use SQLite MCP server to execute if needed."
                 response_data["database_path"] = database_path
 
             log_info(f"Generated {query_type} SQL query")
@@ -2785,12 +2950,18 @@ Provide only the SQL query, properly formatted."""
             try:
                 safe_working_dir = safe_path(".", working_dir)
             except ValueError as e:
-                metrics_collector.record_execution(name, start_time, False, error_type="security_error")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="security_error"
+                )
                 return create_error_response(name, str(e))
 
             if not os.path.exists(safe_working_dir):
-                metrics_collector.record_execution(name, start_time, False, error_type="path_not_found")
-                return create_error_response(name, f"Working directory does not exist: {safe_working_dir}")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="path_not_found"
+                )
+                return create_error_response(
+                    name, f"Working directory does not exist: {safe_working_dir}"
+                )
 
             # Validate files exist if specified
             if files:
@@ -2801,8 +2972,12 @@ Provide only the SQL query, properly formatted."""
                         missing_files.append(file_path)
 
                 if missing_files:
-                    metrics_collector.record_execution(name, start_time, False, error_type="files_not_found")
-                    return create_error_response(name, f"Files not found: {', '.join(missing_files)}")
+                    metrics_collector.record_execution(
+                        name, start_time, False, error_type="files_not_found"
+                    )
+                    return create_error_response(
+                        name, f"Files not found: {', '.join(missing_files)}"
+                    )
 
             # Build pre-commit command
             if files:
@@ -2812,7 +2987,9 @@ Provide only the SQL query, properly formatted."""
 
             # Validate command
             if not validate_command(cmd):
-                metrics_collector.record_execution(name, start_time, False, error_type="security_error")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="security_error"
+                )
                 return create_error_response(name, "Pre-commit command not allowed")
 
             log_info(f"Executing: {' '.join(cmd)} in {safe_working_dir}")
@@ -2837,27 +3014,33 @@ Provide only the SQL query, properly formatted."""
                 }
 
                 if result.returncode != 0:
-                    log_error(f"Pre-commit validation failed with return code {result.returncode}")
-                    metrics_collector.record_execution(name, start_time, False, error_type="validation_failed")
+                    log_error(
+                        f"Pre-commit validation failed with return code {result.returncode}"
+                    )
+                    metrics_collector.record_execution(
+                        name, start_time, False, error_type="validation_failed"
+                    )
                 else:
                     log_info(f"Pre-commit validation passed")
                     metrics_collector.record_execution(name, start_time, True)
 
                 return [
-                    TextContent(
-                        type="text", text=json.dumps(response_data, indent=2)
-                    )
+                    TextContent(type="text", text=json.dumps(response_data, indent=2))
                 ]
 
             except subprocess.TimeoutExpired:
                 error_msg = "Pre-commit validation timed out after 5 minutes"
                 log_error(error_msg)
-                metrics_collector.record_execution(name, start_time, False, error_type="timeout")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="timeout"
+                )
                 return create_error_response(name, error_msg)
             except Exception as e:
                 error_msg = f"Pre-commit validation failed: {str(e)}"
                 log_error(error_msg)
-                metrics_collector.record_execution(name, start_time, False, error_type="validation_error")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="validation_error"
+                )
                 return create_error_response(name, error_msg)
 
         elif name == "validate_correct":
@@ -2869,12 +3052,18 @@ Provide only the SQL query, properly formatted."""
             try:
                 safe_working_dir = safe_path(".", working_dir)
             except ValueError as e:
-                metrics_collector.record_execution(name, start_time, False, error_type="security_error")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="security_error"
+                )
                 return create_error_response(name, str(e))
 
             if not os.path.exists(safe_working_dir):
-                metrics_collector.record_execution(name, start_time, False, error_type="path_not_found")
-                return create_error_response(name, f"Working directory does not exist: {safe_working_dir}")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="path_not_found"
+                )
+                return create_error_response(
+                    name, f"Working directory does not exist: {safe_working_dir}"
+                )
 
             # Validate files exist if specified
             if files:
@@ -2885,8 +3074,12 @@ Provide only the SQL query, properly formatted."""
                         missing_files.append(file_path)
 
                 if missing_files:
-                    metrics_collector.record_execution(name, start_time, False, error_type="files_not_found")
-                    return create_error_response(name, f"Files not found: {', '.join(missing_files)}")
+                    metrics_collector.record_execution(
+                        name, start_time, False, error_type="files_not_found"
+                    )
+                    return create_error_response(
+                        name, f"Files not found: {', '.join(missing_files)}"
+                    )
 
             # First run validation to get issues
             if files:
@@ -2896,7 +3089,9 @@ Provide only the SQL query, properly formatted."""
 
             # Validate command
             if not validate_command(cmd):
-                metrics_collector.record_execution(name, start_time, False, error_type="security_error")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="security_error"
+                )
                 return create_error_response(name, "Pre-commit command not allowed")
 
             log_info(f"Running validation: {' '.join(cmd)} in {safe_working_dir}")
@@ -2980,22 +3175,26 @@ Format your response as valid JSON:
                             try:
                                 safe_file_path = safe_path(safe_working_dir, file_path)
                             except ValueError:
-                                corrections_made.append({
-                                    "file": file_path,
-                                    "issues": file_info["issues"],
-                                    "corrected": False,
-                                    "error": "Path validation failed"
-                                })
+                                corrections_made.append(
+                                    {
+                                        "file": file_path,
+                                        "issues": file_info["issues"],
+                                        "corrected": False,
+                                        "error": "Path validation failed",
+                                    }
+                                )
                                 continue
 
                             # Check file size
                             if not validate_file_size(safe_file_path):
-                                corrections_made.append({
-                                    "file": file_path,
-                                    "issues": file_info["issues"],
-                                    "corrected": False,
-                                    "error": "File too large"
-                                })
+                                corrections_made.append(
+                                    {
+                                        "file": file_path,
+                                        "issues": file_info["issues"],
+                                        "corrected": False,
+                                        "error": "File too large",
+                                    }
+                                )
                                 continue
 
                             # Read the file
@@ -3032,7 +3231,9 @@ Instructions:
 Corrected file content:"""
 
                                 log_info(f"Fixing issues in {file_path}")
-                                corrected_content = await call_vllm_api(fix_prompt, "code_generation")
+                                corrected_content = await call_vllm_api(
+                                    fix_prompt, "code_generation"
+                                )
                                 corrected_content = corrected_content.strip()
 
                                 # Safety checks before writing
@@ -3040,7 +3241,9 @@ Corrected file content:"""
                                     raise ValueError("LLM returned empty content")
 
                                 if len(corrected_content) < len(file_content) * 0.5:
-                                    raise ValueError("LLM returned suspiciously short content")
+                                    raise ValueError(
+                                        "LLM returned suspiciously short content"
+                                    )
 
                                 # Validate corrected content
                                 validate_llm_response(corrected_content, file_content)
@@ -3049,28 +3252,34 @@ Corrected file content:"""
                                 with open(safe_file_path, "w") as f:
                                     f.write(corrected_content)
 
-                                corrections_made.append({
-                                    "file": file_path,
-                                    "issues": file_info["issues"],
-                                    "corrected": True,
-                                    "backup_created": backup_path
-                                })
+                                corrections_made.append(
+                                    {
+                                        "file": file_path,
+                                        "issues": file_info["issues"],
+                                        "corrected": True,
+                                        "backup_created": backup_path,
+                                    }
+                                )
                                 corrections_count += 1
 
                             except Exception as e:
-                                corrections_made.append({
-                                    "file": file_path,
+                                corrections_made.append(
+                                    {
+                                        "file": file_path,
+                                        "issues": file_info["issues"],
+                                        "corrected": False,
+                                        "error": str(e),
+                                    }
+                                )
+                        else:
+                            corrections_made.append(
+                                {
+                                    "file": file_info["file"],
                                     "issues": file_info["issues"],
                                     "corrected": False,
-                                    "error": str(e)
-                                })
-                        else:
-                            corrections_made.append({
-                                "file": file_info["file"],
-                                "issues": file_info["issues"],
-                                "corrected": False,
-                                "reason": "requires manual intervention"
-                            })
+                                    "reason": "requires manual intervention",
+                                }
+                            )
 
                     # Run validation again to check if issues are resolved
                     final_result = subprocess.run(
@@ -3104,29 +3313,41 @@ Corrected file content:"""
                 except json.JSONDecodeError:
                     error_msg = "Failed to parse LLM analysis"
                     log_error(error_msg)
-                    metrics_collector.record_execution(name, start_time, False, error_type="parse_error")
-                    return create_error_response(name, error_msg, {
-                        "raw_analysis": analysis,
-                        "validation_output": validation_output
-                    })
+                    metrics_collector.record_execution(
+                        name, start_time, False, error_type="parse_error"
+                    )
+                    return create_error_response(
+                        name,
+                        error_msg,
+                        {
+                            "raw_analysis": analysis,
+                            "validation_output": validation_output,
+                        },
+                    )
 
             except subprocess.TimeoutExpired:
                 error_msg = "Pre-commit validation timed out after 5 minutes"
                 log_error(error_msg)
-                metrics_collector.record_execution(name, start_time, False, error_type="timeout")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="timeout"
+                )
                 return create_error_response(name, error_msg)
             except Exception as e:
                 error_msg = f"Validation and correction failed: {str(e)}"
                 log_error(error_msg)
-                metrics_collector.record_execution(name, start_time, False, error_type="validation_error")
+                metrics_collector.record_execution(
+                    name, start_time, False, error_type="validation_error"
+                )
                 return create_error_response(name, error_msg)
         elif name == "generate_code_review":
-            review_focus = arguments.get("review_focus", ["style", "bugs", "performance", "maintainability"])
+            review_focus = arguments.get(
+                "review_focus", ["style", "bugs", "performance", "maintainability"]
+            )
             language = arguments.get("language", "python")
             severity_filter = arguments.get("severity_filter", "all")
-            
+
             focus_areas = ", ".join(review_focus)
-            
+
             prompt = f"""Perform a comprehensive code review of this {language} code diff/change.
 
 Code to review:
@@ -3149,19 +3370,26 @@ Filter results to show {severity_filter} severity issues."""
 
             log_info("Performing code review analysis")
             review = await call_vllm_api(prompt, "analysis")
-            
+
             log_info(f"Generated {len(review)} characters of code review")
             metrics_collector.record_execution(name, start_time, True)
             return [TextContent(type="text", text=review)]
 
         elif name == "suggest_refactoring_opportunities":
-            refactoring_types = arguments.get("refactoring_types", 
-                ["extract_method", "reduce_complexity", "remove_duplication", "improve_naming"])
+            refactoring_types = arguments.get(
+                "refactoring_types",
+                [
+                    "extract_method",
+                    "reduce_complexity",
+                    "remove_duplication",
+                    "improve_naming",
+                ],
+            )
             complexity_threshold = arguments.get("complexity_threshold", 10)
             language = arguments.get("language", "python")
-            
+
             refactoring_focus = ", ".join(refactoring_types)
-            
+
             prompt = f"""Analyze this {language} code for refactoring opportunities.
 
 Code to analyze:
@@ -3182,19 +3410,28 @@ Focus on practical, implementable improvements that will have meaningful impact 
 
             log_info("Analyzing code for refactoring opportunities")
             suggestions = await call_vllm_api(prompt, "analysis")
-            
-            log_info(f"Generated {len(suggestions)} characters of refactoring suggestions")
+
+            log_info(
+                f"Generated {len(suggestions)} characters of refactoring suggestions"
+            )
             metrics_collector.record_execution(name, start_time, True)
             return [TextContent(type="text", text=suggestions)]
 
         elif name == "generate_performance_analysis":
             language = arguments.get("language", "python")
             performance_context = arguments.get("performance_context", "general")
-            focus_areas = arguments.get("focus_areas", 
-                ["time_complexity", "space_complexity", "io_operations", "database_queries"])
-            
+            focus_areas = arguments.get(
+                "focus_areas",
+                [
+                    "time_complexity",
+                    "space_complexity",
+                    "io_operations",
+                    "database_queries",
+                ],
+            )
+
             focus_description = ", ".join(focus_areas)
-            
+
             prompt = f"""Analyze this {language} code for performance bottlenecks and optimization opportunities.
 
 Code to analyze:
@@ -3216,7 +3453,7 @@ Include both algorithmic improvements and language-specific optimizations approp
 
             log_info("Performing performance analysis")
             analysis = await call_vllm_api(prompt, "analysis")
-            
+
             log_info(f"Generated {len(analysis)} characters of performance analysis")
             metrics_collector.record_execution(name, start_time, True)
             return [TextContent(type="text", text=analysis)]
@@ -3225,9 +3462,13 @@ Include both algorithmic improvements and language-specific optimizations approp
             doc_format = arguments.get("doc_format", "markdown")
             include_examples = arguments.get("include_examples", True)
             language = arguments.get("language", "python")
-            
-            examples_instruction = "Include detailed usage examples with request/response samples" if include_examples else "Focus on API specification without examples"
-            
+
+            examples_instruction = (
+                "Include detailed usage examples with request/response samples"
+                if include_examples
+                else "Focus on API specification without examples"
+            )
+
             prompt = f"""Generate comprehensive API documentation from this {language} code in {doc_format} format.
 
 Code containing API definitions:
@@ -3246,21 +3487,27 @@ Generate production-ready API documentation that developers can use immediately.
 
             log_info(f"Generating API documentation in {doc_format} format")
             documentation = await call_vllm_api(prompt, "documentation")
-            
+
             log_info(f"Generated {len(documentation)} characters of API documentation")
             metrics_collector.record_execution(name, start_time, True)
             return [TextContent(type="text", text=documentation)]
 
         elif name == "generate_integration_tests":
-            test_scenarios = arguments.get("test_scenarios", 
-                ["happy_path", "error_cases", "edge_cases", "authentication"])
+            test_scenarios = arguments.get(
+                "test_scenarios",
+                ["happy_path", "error_cases", "edge_cases", "authentication"],
+            )
             framework = arguments.get("framework", "pytest")
             include_fixtures = arguments.get("include_fixtures", True)
             language = arguments.get("language", "python")
-            
+
             scenarios_list = ", ".join(test_scenarios)
-            fixtures_instruction = "Include comprehensive test fixtures and mock data" if include_fixtures else "Generate tests without fixtures"
-            
+            fixtures_instruction = (
+                "Include comprehensive test fixtures and mock data"
+                if include_fixtures
+                else "Generate tests without fixtures"
+            )
+
             prompt = f"""Generate comprehensive integration tests for this {language} code using {framework}.
 
 Code to test:
@@ -3282,21 +3529,33 @@ Provide runnable, production-ready integration tests with proper test isolation 
 
             log_info(f"Generating integration tests using {framework}")
             tests = await call_vllm_api(prompt, "code_generation")
-            
+
             log_info(f"Generated {len(tests)} characters of integration tests")
             metrics_collector.record_execution(name, start_time, True)
             return [TextContent(type="text", text=tests)]
 
         elif name == "security_scan_code":
-            vulnerability_types = arguments.get("vulnerability_types", 
-                ["injection", "authentication", "authorization", "crypto", "input_validation"])
+            vulnerability_types = arguments.get(
+                "vulnerability_types",
+                [
+                    "injection",
+                    "authentication",
+                    "authorization",
+                    "crypto",
+                    "input_validation",
+                ],
+            )
             language = arguments.get("language", "python")
             include_fixes = arguments.get("include_fixes", True)
             severity_threshold = arguments.get("severity_threshold", "medium")
-            
+
             vuln_types = ", ".join(vulnerability_types)
-            fixes_instruction = "Include specific fix recommendations with code examples" if include_fixes else "Only identify vulnerabilities without fixes"
-            
+            fixes_instruction = (
+                "Include specific fix recommendations with code examples"
+                if include_fixes
+                else "Only identify vulnerabilities without fixes"
+            )
+
             prompt = f"""Perform a comprehensive security analysis of this {language} code.
 
 Code to scan:
@@ -3319,19 +3578,23 @@ Focus on practical, actionable security improvements that can be implemented imm
 
             log_info("Performing security scan")
             security_analysis = await call_vllm_api(prompt, "analysis")
-            
-            log_info(f"Generated {len(security_analysis)} characters of security analysis")
+
+            log_info(
+                f"Generated {len(security_analysis)} characters of security analysis"
+            )
             metrics_collector.record_execution(name, start_time, True)
             return [TextContent(type="text", text=security_analysis)]
 
         elif name == "generate_unit_test_fixtures":
-            fixture_types = arguments.get("fixture_types", 
-                ["mock_data", "test_objects", "api_responses", "database_records"])
+            fixture_types = arguments.get(
+                "fixture_types",
+                ["mock_data", "test_objects", "api_responses", "database_records"],
+            )
             framework = arguments.get("framework", "pytest")
             data_realism = arguments.get("data_realism", "realistic")
-            
+
             fixture_list = ", ".join(fixture_types)
-            
+
             prompt = f"""Generate comprehensive test fixtures for unit testing this code using {framework}.
 
 Code under test:
@@ -3360,7 +3623,7 @@ Provide complete, runnable fixture code with proper {framework} decorators and c
 
             log_info(f"Generating test fixtures using {framework}")
             fixtures = await call_vllm_api(prompt, "code_generation")
-            
+
             log_info(f"Generated {len(fixtures)} characters of test fixtures")
             metrics_collector.record_execution(name, start_time, True)
             return [TextContent(type="text", text=fixtures)]
@@ -3369,9 +3632,13 @@ Provide complete, runnable fixture code with proper {framework} decorators and c
             annotation_style = arguments.get("annotation_style", "comprehensive")
             language = arguments.get("language", "python")
             include_generics = arguments.get("include_generics", True)
-            
-            generics_instruction = "Include generic type parameters where appropriate" if include_generics else "Use basic types without generics"
-            
+
+            generics_instruction = (
+                "Include generic type parameters where appropriate"
+                if include_generics
+                else "Use basic types without generics"
+            )
+
             prompt = f"""Add comprehensive type annotations to this {language} code.
 
 Code to annotate:
@@ -3400,19 +3667,20 @@ Return the complete code with all appropriate type annotations added."""
 
             log_info(f"Adding type annotations in {annotation_style} style")
             annotated_code = await call_vllm_api(prompt, "code_generation")
-            
+
             log_info(f"Generated {len(annotated_code)} characters of annotated code")
             metrics_collector.record_execution(name, start_time, True)
             return [TextContent(type="text", text=annotated_code)]
 
         elif name == "optimize_imports":
-            optimization_types = arguments.get("optimization_types", 
-                ["remove_unused", "sort", "group", "add_missing"])
+            optimization_types = arguments.get(
+                "optimization_types", ["remove_unused", "sort", "group", "add_missing"]
+            )
             language = arguments.get("language", "python")
             style_guide = arguments.get("style_guide", "pep8")
-            
+
             optimizations = ", ".join(optimization_types)
-            
+
             prompt = f"""Optimize the import statements in this {language} code following {style_guide} style guidelines.
 
 Code with imports to optimize:
@@ -3441,19 +3709,24 @@ Return the complete code with optimized import statements."""
 
             log_info(f"Optimizing imports following {style_guide} guidelines")
             optimized_code = await call_vllm_api(prompt, "code_generation")
-            
+
             log_info(f"Generated {len(optimized_code)} characters of optimized code")
             metrics_collector.record_execution(name, start_time, True)
             return [TextContent(type="text", text=optimized_code)]
         # Unknown tool
         log_error(f"Unknown tool: {name}")
-        metrics_collector.record_execution(name, start_time, False, error_type="unknown_tool")
+        metrics_collector.record_execution(
+            name, start_time, False, error_type="unknown_tool"
+        )
         return create_error_response(name, f"Unknown tool: {name}")
 
     except Exception as e:
         log_error(f"Error in call_tool({name}): {e}", exc_info=True)
-        metrics_collector.record_execution(name, start_time, False, error_type=type(e).__name__)
+        metrics_collector.record_execution(
+            name, start_time, False, error_type=type(e).__name__
+        )
         return create_error_response(name, str(e))
+
 
 # ========== MAIN ENTRY POINT ==========
 async def main():
@@ -3466,12 +3739,16 @@ async def main():
         log_info("Testing vLLM connection...")
         try:
             client = await vllm_client.get_client()
-            response = await client.get(CONFIG.vllm.api_url.replace("/chat/completions", "/models"))
+            response = await client.get(
+                CONFIG.vllm.api_url.replace("/chat/completions", "/models")
+            )
             log_info(f"✓ vLLM connection OK: {response.status_code}")
             log_debug(f"vLLM models response: {response.text}")
         except Exception as e:
             log_error(f"⚠ Cannot connect to vLLM: {e}")
-            log_error("Server will start anyway, but tools will fail until vLLM is available")
+            log_error(
+                "Server will start anyway, but tools will fail until vLLM is available"
+            )
 
         log_info("Starting stdio server...")
         async with stdio_server() as (read_stream, write_stream):
@@ -3487,6 +3764,7 @@ async def main():
     finally:
         # Cleanup
         await vllm_client.close()
+
 
 if __name__ == "__main__":
     try:

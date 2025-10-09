@@ -21,14 +21,16 @@ except ImportError:
     print("Make sure vllm_delegator.py is in the same directory as this script")
     sys.exit(1)
 
+
 def setup_logging():
     """Setup basic logging for the server launcher"""
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
     logging.basicConfig(
         level=getattr(logging, log_level, logging.INFO),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[logging.StreamHandler(sys.stderr)]
+        handlers=[logging.StreamHandler(sys.stderr)],
     )
+
 
 def check_environment():
     """Check if required environment variables are set"""
@@ -38,30 +40,33 @@ def check_environment():
         "VLLM_MODEL": "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ",
         "LOGGING_ON": "true",
         "LOG_LEVEL": "INFO",
-        "LOG_FILE": "/tmp/vllm_mcp_delegator.log"
+        "LOG_FILE": "/tmp/vllm_mcp_delegator.log",
     }
-    
+
     # Check for missing required variables
     missing_vars = [var for var in required_vars if not os.getenv(var)]
     if missing_vars:
-        print(f"Error: Missing required environment variables: {', '.join(missing_vars)}")
+        print(
+            f"Error: Missing required environment variables: {', '.join(missing_vars)}"
+        )
         return False
-    
+
     # Set default values for optional variables
     for var, default in optional_vars.items():
         if not os.getenv(var):
             os.environ[var] = default
             print(f"Using default value for {var}: {default}")
-    
+
     return True
+
 
 def check_vllm_connection():
     """Check if vLLM server is accessible (optional check)"""
     import httpx
-    
+
     vllm_url = os.getenv("VLLM_API_URL", "http://localhost:8002/v1/chat/completions")
     models_url = vllm_url.replace("/chat/completions", "/models")
-    
+
     try:
         with httpx.Client(timeout=5.0) as client:
             response = client.get(models_url)
@@ -73,14 +78,17 @@ def check_vllm_connection():
                 return False
     except Exception as e:
         print(f"⚠ Cannot connect to vLLM server at {vllm_url}: {e}")
-        print("The server will start anyway, but tools will fail until vLLM is available")
+        print(
+            "The server will start anyway, but tools will fail until vLLM is available"
+        )
         return False
+
 
 async def run_server():
     """Run the vLLM delegator MCP server"""
     print("Starting vLLM Delegator MCP Server...")
     print("Press Ctrl+C to stop the server")
-    
+
     try:
         await delegator_main()
     except KeyboardInterrupt:
@@ -90,21 +98,22 @@ async def run_server():
         print(f"Server encountered an error: {e}")
         sys.exit(1)
 
+
 def main():
     """Main entry point"""
     setup_logging()
-    
+
     print("=" * 60)
     print("vLLM Delegator MCP Server")
     print("=" * 60)
-    
+
     # Check environment setup
     if not check_environment():
         sys.exit(1)
-    
+
     # Optional vLLM connection check
     check_vllm_connection()
-    
+
     # Display configuration
     print("\nConfiguration:")
     print(f"  vLLM API URL: {os.getenv('VLLM_API_URL')}")
@@ -112,17 +121,17 @@ def main():
     print(f"  Logging: {os.getenv('LOGGING_ON')}")
     print(f"  Log Level: {os.getenv('LOG_LEVEL')}")
     print(f"  Log File: {os.getenv('LOG_FILE')}")
-    
+
     # Check for config file
     config_file = os.getenv("CONFIG_FILE", "config.yaml")
     if os.path.exists(config_file):
         print(f"  Config File: {config_file} (found)")
     else:
         print(f"  Config File: {config_file} (not found, using environment variables)")
-    
+
     print("\nStarting server...")
     print("-" * 60)
-    
+
     # Run the server
     try:
         asyncio.run(run_server())
@@ -131,6 +140,7 @@ def main():
     except Exception as e:
         print(f"Fatal error: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
