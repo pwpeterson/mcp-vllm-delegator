@@ -15,6 +15,7 @@ searxng/uwsgi*
 
 # Logs
 context_portal/logs/*
+context_portal/.roo/logs/*
 
 # Claude
 .claude

@@ -213,7 +213,7 @@ def test_authenticate_nonexistent_user():
 
 **User:** "Review changes and commit with appropriate message"
 
-**Claude:** 
+**Claude:**
 1. Reviews `git_status` and `git_diff`
 2. "Delegating commit message generation to local Qwen2.5-Coder..."
 3. Uses `generate_git_commit_message`

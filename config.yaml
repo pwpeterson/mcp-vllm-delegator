@@ -1,0 +1,18 @@
+vllm:
+  api_url: "http://localhost:8002/v1/chat/completions"
+  model: "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ"
+  timeout: 180
+
+security:
+  allowed_paths: ["/home/pwp/srv/coding_agent"]
+  max_file_size: 1048576
+
+features:
+  caching: true
+  metrics: true
+  auto_backup: true
+
+logging:
+  enabled: true
+  level: "INFO"
+  file: "/home/pwp/srv/coding_agent/mcp/mcp-vllm-delegator/logs/delegator.log"

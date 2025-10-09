@@ -8,7 +8,7 @@ s
 
 ### User Request
 ```
-"Create a FastAPI application for a blog platform with posts, comments, and users. 
+"Create a FastAPI application for a blog platform with posts, comments, and users.
 Include CRUD operations for all entities."
 ```
 
@@ -23,7 +23,7 @@ Include CRUD operations for all entities."
 ```python
 # Claude uses: generate_schema for each entity
 # Tool calls:
-# 1. generate_schema(description="User model with id, email, username, created_at", 
+# 1. generate_schema(description="User model with id, email, username, created_at",
 #                    schema_type="pydantic")
 # 2. generate_schema(description="Post model with id, title, content, author_id, created_at",
 #                    schema_type="pydantic")
@@ -241,7 +241,7 @@ Clean, maintainable codebase with proper structure, tests, and documentation.
 **Step 2: Generate Core Components** (Delegates to vLLM)
 ```python
 # Parallel delegation:
-# 1. generate_schema(description="URLMapping with short_code, original_url, created_at", 
+# 1. generate_schema(description="URLMapping with short_code, original_url, created_at",
 #                    schema_type="pydantic")
 # 2. generate_boilerplate_file(file_type="database_model", language="python",
 #                               options={"orm": "sqlalchemy", "table": "url_mappings"})
