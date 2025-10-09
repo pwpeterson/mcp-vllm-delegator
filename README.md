@@ -1,5 +1,44 @@
 # MCP vLLM Delegator
 
+A modular Model Context Protocol (MCP) server that delegates coding tasks to a local vLLM instance.
+
+## Installation
+
+1. Install dependencies:
+```bash
+pip install .
+```
+
+2. For development (includes testing and formatting tools):
+```bash
+pip install .[dev]
+```
+
+3. Run the server:
+```bash
+python vllm_delegator.py
+```
+
+## Configuration
+
+Set environment variables or create a `config.yaml` file:
+
+- `VLLM_API_URL`: URL of your vLLM server (default: http://localhost:8002/v1/chat/completions)
+- `VLLM_MODEL`: Model name (default: Qwen/Qwen2.5-Coder-32B-Instruct-AWQ)
+- `LOGGING_ON`: Enable logging (default: true)
+- `LOG_LEVEL`: Logging level (default: INFO)
+
+## Features
+
+- Code generation and completion
+- Pre-commit validation and auto-correction
+- Git workflow automation
+- Code analysis and refactoring suggestions
+- Documentation generation
+- Project scaffolding
+
+# MCP vLLM Delegator
+
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
 [![MCP](https://img.shields.io/badge/MCP-1.16.0+-green.svg)](https://modelcontextprotocol.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -35,7 +74,15 @@ curl http://localhost:8002/v1/models
 ### 2. Install Dependencies
 
 ```bash
-pip install mcp httpx
+# Clone the repository
+git clone <repository-url>
+cd mcp-vllm-delegator
+
+# Install the package
+pip install .
+
+# Or for development
+pip install .[dev]
 ```
 
 ### 3. Configure MCP Client
@@ -47,7 +94,7 @@ For **Roo Code**, add to `~/.config/roo-code/mcp.json`:
   "mcpServers": {
     "vllm-delegator": {
       "command": "python",
-      "args": ["/path/to/vllm_delegator.py"]
+      "args": ["/path/to/mcp-vllm-delegator/vllm_delegator.py"]
     }
   }
 }
@@ -292,13 +339,40 @@ python vllm_delegator.py
 ```
 mcp-vllm-delegator/
 ├── vllm_delegator.py      # Main MCP server
-├── test_delegator.py      # Connection test
-├── test_tool_call.py      # Tool testing
-├── pyproject.toml         # Project configuration
+├── pyproject.toml         # Project configuration & dependencies
+├── config.yaml.example    # Configuration template
 ├── README.md              # This file
-├── Quickstart_Guide.md    # Step-by-step setup
-├── Usage_Scenarios.md     # Real-world examples
+├── config/                # Configuration management
+│   ├── __init__.py
+│   ├── models.py          # Model configurations
+│   └── settings.py        # Settings loader
+├── core/                  # Core functionality
+│   ├── __init__.py
+│   ├── client.py          # vLLM client
+│   ├── cache.py           # Response caching
+│   ├── metrics.py         # Performance metrics
+│   └── validation.py      # Response validation
+├── tools/                 # Tool modules
+│   ├── __init__.py
+│   ├── base.py            # Base tools
+│   ├── code_tools.py      # Code generation (10 tools)
+│   ├── git_tools.py       # Git operations (7 tools)
+│   ├── generation_tools.py # File generation (10 tools)
+│   ├── analysis_tools.py  # Code analysis (9 tools)
+│   ├── database_tools.py  # Database tools (2 tools)
+│   └── validation_tools.py # Validation tools (2 tools)
+├── security/              # Security utilities
+│   ├── __init__.py
+│   └── utils.py           # Path validation
+├── utils/                 # Utility modules
+│   ├── __init__.py
+│   ├── logging.py         # Logging setup
+│   └── errors.py          # Error handling
+├── docs/                  # Documentation
+│   ├── quickstart_guide.md
+│   └── usage_scenarios.md
 └── context_portal/        # ConPort integration
+    └── context.db
 ```
 
 ## 🤝 Integration with Other Tools
