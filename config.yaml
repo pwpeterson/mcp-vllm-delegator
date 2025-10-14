@@ -1,7 +1,7 @@
 vllm:
   api_url: "http://localhost:8002/v1/chat/completions"
   model: "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ"
-  timeout: 180
+  timeout: 600
 
 security:
   allowed_paths: ["/home/pwp/srv/coding_agent"]
@@ -16,3 +16,7 @@ logging:
   enabled: true
   level: "INFO"
   file: "/home/pwp/srv/coding_agent/mcp/mcp-vllm-delegator/logs/delegator.log"
+
+mcp:
+  timeout: 900  # 15 minutes for complex operations
+  max_corrections: 5  # Limit corrections per call to prevent long runs

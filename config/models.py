@@ -4,7 +4,6 @@ Model configurations and language detection utilities
 
 import os
 from pathlib import Path
-from typing import Dict
 
 # Model configurations for different task types
 MODEL_CONFIGS = {
@@ -66,7 +65,9 @@ def detect_project_language(working_dir: str) -> str:
 
     # Return language with most files, or python as default
     return (
-        max(file_counts, key=file_counts.get) if any(file_counts.values()) else "python"
+        max(file_counts, key=lambda k: file_counts[k])
+        if any(file_counts.values())
+        else "python"
     )
 
 

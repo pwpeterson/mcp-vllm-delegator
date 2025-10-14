@@ -57,7 +57,12 @@ def create_simple_code_tool() -> Tool:
     """Create simple code generation tool definition"""
     return Tool(
         name="generate_simple_code",
-        description="Delegate simple, straightforward code generation to local Qwen2.5-Coder LLM. Use for: boilerplate code, basic CRUD functions, simple utility functions, standard implementations, repetitive code patterns. NOT for: complex algorithms, architectural decisions, code requiring deep context.",
+        description=(
+            "Delegate simple code generation to local Qwen2.5-Coder LLM. "
+            "Use for: boilerplate code, basic CRUD functions, utility functions, "
+            "standard implementations, repetitive patterns. NOT for: complex "
+            "algorithms, architectural decisions, code requiring deep context."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
@@ -67,7 +72,9 @@ def create_simple_code_tool() -> Tool:
                 },
                 "language": {
                     "type": "string",
-                    "description": "Programming language (e.g., python, javascript, rust)",
+                    "description": (
+                        "Programming language (e.g., python, javascript, rust)"
+                    ),
                     "default": "python",
                 },
                 "max_tokens": {

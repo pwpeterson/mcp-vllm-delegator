@@ -5,7 +5,6 @@ Logging utilities and setup
 import logging
 import os
 import sys
-from pathlib import Path
 
 
 def setup_logging(config=None):

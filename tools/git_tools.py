@@ -4,13 +4,11 @@ Git operations and workflow tools
 
 import json
 import subprocess
-import time
 from typing import List
 
 from mcp.types import TextContent, Tool
 
 from core.client import call_vllm_api
-from core.metrics import metrics_collector
 from security.utils import validate_command
 from utils.errors import create_error_response
 from utils.logging import log_error, log_info
@@ -183,7 +181,7 @@ async def execute_git_status(arguments: dict, config=None) -> List[TextContent]:
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         output = result.stdout.strip()
-        log_info(f"Git status completed successfully")
+        log_info("Git status completed successfully")
 
         # Parse porcelain output for structured response
         if porcelain:
@@ -249,7 +247,7 @@ async def execute_git_add(arguments: dict, config=None) -> List[TextContent]:
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        log_info(f"Git add completed successfully")
+        log_info("Git add completed successfully")
         response_data = {
             "ok": True,
             "output": result.stdout.strip(),
@@ -280,11 +278,11 @@ async def execute_git_commit(arguments: dict, config=None) -> List[TextContent]:
     if not validate_command(cmd, allowed_commands):
         return create_error_response("git_commit", "Git commit command not allowed")
 
-    log_info(f"Executing: git commit -m '[message]'")
+    log_info("Executing: git commit -m '[message]'")
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        log_info(f"Git commit completed successfully")
+        log_info("Git commit completed successfully")
 
         response_data = {
             "ok": True,
@@ -351,7 +349,7 @@ async def execute_git_diff(arguments: dict, config=None) -> List[TextContent]:
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         output = result.stdout.strip()
-        log_info(f"Git diff completed successfully")
+        log_info("Git diff completed successfully")
         return [
             TextContent(
                 type="text",
@@ -386,7 +384,7 @@ async def execute_git_log(arguments: dict, config=None) -> List[TextContent]:
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         output = result.stdout.strip()
-        log_info(f"Git log completed successfully")
+        log_info("Git log completed successfully")
         return [TextContent(type="text", text=output if output else "No commits found")]
 
     except subprocess.CalledProcessError as e:
@@ -507,7 +505,7 @@ async def execute_generate_git_commit_message(
 {type_instruction}{scope_instruction}.
 
 Changes summary:
-{arguments['changes_summary']}
+{arguments["changes_summary"]}
 
 Format: type(scope): description
 

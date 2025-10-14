@@ -3,7 +3,7 @@ vLLM client management and API interaction
 """
 
 import asyncio
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 import httpx
 
@@ -52,7 +52,7 @@ async def retry_with_backoff(
     for attempt in range(max_retries):
         try:
             return await func()
-        except (httpx.TimeoutException, httpx.ConnectError) as e:
+        except (httpx.TimeoutException, httpx.ConnectError):
             if attempt == max_retries - 1:
                 raise
             delay = min(base_delay * (2**attempt), max_delay)

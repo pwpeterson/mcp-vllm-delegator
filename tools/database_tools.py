@@ -11,7 +11,7 @@ from mcp.types import TextContent, Tool
 from core.client import call_vllm_api
 from security.utils import safe_path
 from utils.errors import create_error_response
-from utils.logging import log_error, log_info
+from utils.logging import log_info
 
 
 def create_database_tools() -> List[Tool]:
@@ -258,9 +258,9 @@ Provide only the SQL query, no explanations."""
             except Exception as e:
                 response_data["execution_error"] = f"Execution error: {str(e)}"
         else:
-            response_data[
-                "execution_error"
-            ] = f"Query type '{query_type}' not allowed for execution (security restriction)"
+            response_data["execution_error"] = (
+                f"Query type '{query_type}' not allowed for execution (security restriction)"
+            )
     elif execute_query:
         response_data["execution_error"] = "Database path required for query execution"
 

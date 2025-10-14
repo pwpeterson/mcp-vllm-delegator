@@ -84,9 +84,11 @@ def load_config() -> Config:
                 config_data = yaml.safe_load(f)
             return Config(
                 **{
-                    k: type(getattr(Config, k)).__call__(**v)
-                    if isinstance(v, dict)
-                    else v
+                    k: (
+                        type(getattr(Config, k)).__call__(**v)
+                        if isinstance(v, dict)
+                        else v
+                    )
                     for k, v in config_data.items()
                 }
             )

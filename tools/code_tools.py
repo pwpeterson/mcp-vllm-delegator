@@ -1,17 +1,12 @@
-"""
-Code generation and manipulation tools
-"""
+"""Code generation and manipulation tools"""
 
-import time
 from typing import List
 
 from mcp.types import TextContent, Tool
 
 from config.models import detect_language_from_code
 from core.client import call_vllm_api
-from core.metrics import metrics_collector
-from utils.errors import create_error_response
-from utils.logging import log_error, log_info
+from utils.logging import log_info
 
 
 def create_code_tools() -> List[Tool]:
@@ -19,7 +14,11 @@ def create_code_tools() -> List[Tool]:
     return [
         Tool(
             name="complete_code",
-            description="Complete or extend existing code using local LLM. Good for: filling in function bodies, completing class methods, adding docstrings, implementing obvious next steps.",
+            description=(
+                "Complete or extend existing code using local LLM. Good for: "
+                "filling in function bodies, class methods, adding docstrings, "
+                "implementing obvious next steps."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -47,7 +46,9 @@ def create_code_tools() -> List[Tool]:
         ),
         Tool(
             name="explain_code",
-            description="Get quick code explanations from local LLM for simple code snippets.",
+            description=(
+                "Get quick code explanations from local LLM for simple code snippets."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -63,7 +64,11 @@ def create_code_tools() -> List[Tool]:
         ),
         Tool(
             name="generate_docstrings",
-            description="Generate docstrings/comments for code using local LLM. Use for: function/class documentation, inline comments for simple logic. Supports multiple documentation styles.",
+            description=(
+                "Generate docstrings/comments for code using local LLM. Use for: "
+                "function/class documentation, inline comments for simple logic. "
+                "Supports multiple documentation styles."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -88,7 +93,11 @@ def create_code_tools() -> List[Tool]:
         ),
         Tool(
             name="generate_tests",
-            description="Generate basic unit tests using local LLM. Use for: simple function tests, basic edge cases, happy path tests. NOT for: integration tests, complex mocking scenarios.",
+            description=(
+                "Generate basic unit tests using local LLM. Use for: simple "
+                "function tests, basic edge cases, happy path tests. NOT for: "
+                "integration tests, complex mocking scenarios."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -113,7 +122,10 @@ def create_code_tools() -> List[Tool]:
                         "type": "string",
                         "enum": ["basic", "standard", "comprehensive"],
                         "default": "standard",
-                        "description": "basic=happy path, standard=+edge cases, comprehensive=+error cases",
+                        "description": (
+                            "basic=happy path, standard=+edge cases, "
+                            "comprehensive=+error cases"
+                        ),
                     },
                     "language": {
                         "type": "string",
@@ -126,14 +138,23 @@ def create_code_tools() -> List[Tool]:
         ),
         Tool(
             name="refactor_simple_code",
-            description="Refactor simple code patterns using local LLM. Use for: variable renaming, extract method, simplify conditionals, remove duplication in straightforward code. NOT for: complex architectural refactoring, cross-file changes.",
+            description=(
+                "Refactor simple code patterns using local LLM. Use for: "
+                "variable renaming, extract method, simplify conditionals, "
+                "remove duplication in straightforward code. NOT for: complex "
+                "architectural refactoring, cross-file changes."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "code": {"type": "string", "description": "Code to refactor"},
                     "refactor_type": {
                         "type": "string",
-                        "description": "Type of refactoring (e.g., 'extract method', 'rename variables', 'simplify conditionals', 'remove duplication')",
+                        "description": (
+                            "Type of refactoring (e.g., 'extract method', "
+                            "'rename variables', 'simplify conditionals', "
+                            "'remove duplication')"
+                        ),
                     },
                     "language": {
                         "type": "string",
@@ -142,7 +163,9 @@ def create_code_tools() -> List[Tool]:
                     },
                     "additional_context": {
                         "type": "string",
-                        "description": "Additional context or constraints for refactoring",
+                        "description": (
+                            "Additional context or constraints for refactoring"
+                        ),
                         "default": "",
                     },
                 },
@@ -151,7 +174,12 @@ def create_code_tools() -> List[Tool]:
         ),
         Tool(
             name="fix_simple_bugs",
-            description="Fix straightforward bugs using local LLM. Use for: syntax errors, simple logic errors, obvious type mismatches, missing imports for standard libraries. NOT for: race conditions, memory leaks, complex logic errors.",
+            description=(
+                "Fix straightforward bugs using local LLM. Use for: syntax "
+                "errors, simple logic errors, obvious type mismatches, missing "
+                "imports for standard libraries. NOT for: race conditions, "
+                "memory leaks, complex logic errors."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -179,18 +207,28 @@ def create_code_tools() -> List[Tool]:
         ),
         Tool(
             name="convert_code_format",
-            description="Convert between code formats/styles using local LLM. Use for: camelCase to snake_case, JSON to YAML, SQL to ORM, callback to async/await (simple cases).",
+            description=(
+                "Convert between code formats/styles using local LLM. Use for: "
+                "camelCase to snake_case, JSON to YAML, SQL to ORM, callback to "
+                "async/await (simple cases)."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "code": {"type": "string", "description": "Code to convert"},
                     "from_format": {
                         "type": "string",
-                        "description": "Current format (e.g., 'camelCase', 'json', 'callbacks', 'sql')",
+                        "description": (
+                            "Current format (e.g., 'camelCase', 'json', "
+                            "'callbacks', 'sql')"
+                        ),
                     },
                     "to_format": {
                         "type": "string",
-                        "description": "Target format (e.g., 'snake_case', 'yaml', 'async/await', 'orm')",
+                        "description": (
+                            "Target format (e.g., 'snake_case', 'yaml', "
+                            "'async/await', 'orm')"
+                        ),
                     },
                     "language": {
                         "type": "string",
@@ -203,7 +241,11 @@ def create_code_tools() -> List[Tool]:
         ),
         Tool(
             name="improve_code_style",
-            description="Improve code style/readability using local LLM. Use for: consistent naming, line length, import ordering, simple readability improvements.",
+            description=(
+                "Improve code style/readability using local LLM. Use for: "
+                "consistent naming, line length, import ordering, simple "
+                "readability improvements."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -232,7 +274,10 @@ def create_code_tools() -> List[Tool]:
         ),
         Tool(
             name="add_type_annotations",
-            description="Add type hints to dynamically typed code using local LLM. Improves code maintainability and IDE support.",
+            description=(
+                "Add type hints to dynamically typed code using local LLM. "
+                "Improves code maintainability and IDE support."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -263,7 +308,10 @@ def create_code_tools() -> List[Tool]:
         ),
         Tool(
             name="optimize_imports",
-            description="Clean up and optimize import statements using local LLM. Removes unused imports, sorts, and groups them properly.",
+            description=(
+                "Clean up and optimize import statements using local LLM. "
+                "Removes unused imports, sorts, and groups them properly."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -275,7 +323,12 @@ def create_code_tools() -> List[Tool]:
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "Types of import optimization",
-                        "default": ["remove_unused", "sort", "group", "add_missing"],
+                        "default": [
+                            "remove_unused",
+                            "sort",
+                            "group",
+                            "add_missing",
+                        ],
                     },
                     "language": {
                         "type": "string",
@@ -305,9 +358,9 @@ async def execute_complete_code(arguments: dict, config=None) -> List[TextConten
     prompt = f"""Complete the following code according to the instruction.
 
 Code:
-{arguments['code_context']}
+{arguments["code_context"]}
 
-Instruction: {arguments['instruction']}
+Instruction: {arguments["instruction"]}
 
 Provide only the completion, maintaining the existing code style."""
 
@@ -323,7 +376,7 @@ async def execute_explain_code(arguments: dict, config=None) -> List[TextContent
     detail = "briefly" if arguments.get("detail_level") == "brief" else "in detail"
     prompt = f"""Explain {detail} what this code does:
 
-{arguments['code']}"""
+{arguments["code"]}"""
 
     log_info("Calling vLLM API for explain_code")
     explanation = await call_vllm_api(prompt, "explanation", config=config)
@@ -338,11 +391,13 @@ async def execute_generate_docstrings(
     """Execute docstring generation"""
     style = arguments.get("style", "google")
     language = arguments.get("language", "python")
-    prompt = f"""Add {style}-style docstrings to this {language} code. Return the complete code with docstrings added.
+    prompt = f"""Add {style}-style docstrings to this {language} code. \
+Return the complete code with docstrings added.
 
-{arguments['code']}
+{arguments["code"]}
 
-Follow {style} documentation standards for {language}. Include parameter descriptions, return values, and any exceptions that might be raised."""
+Follow {style} documentation standards for {language}. Include parameter \
+descriptions, return values, and any exceptions that might be raised."""
 
     log_info("Calling vLLM API for generate_docstrings")
     documented_code = await call_vllm_api(prompt, "documentation", config=config)
@@ -360,13 +415,16 @@ async def execute_generate_tests(arguments: dict, config=None) -> List[TextConte
     coverage_desc = {
         "basic": "basic happy path tests",
         "standard": "happy path tests plus common edge cases",
-        "comprehensive": "comprehensive tests including happy path, edge cases, and error conditions",
+        "comprehensive": (
+            "comprehensive tests including happy path, edge cases, and error conditions"
+        ),
     }
 
-    prompt = f"""Generate {coverage_desc[coverage]} using {framework} for the following code.
+    prompt = f"""Generate {coverage_desc[coverage]} using {framework} for \
+the following code.
 
 Code to test:
-{arguments['code']}
+{arguments["code"]}
 
 Generate complete, runnable test code."""
 
@@ -385,11 +443,12 @@ async def execute_refactor_simple_code(
     context = arguments.get("additional_context", "")
     context_str = f"\n\nAdditional context: {context}" if context else ""
 
-    prompt = f"""Refactor the following code using this refactoring pattern: {arguments['refactor_type']}
+    prompt = f"""Refactor the following code using this refactoring pattern: \
+{arguments["refactor_type"]}
 {context_str}
 
 Original code:
-{arguments['code']}
+{arguments["code"]}
 
 Provide the refactored code, maintaining functionality."""
 
@@ -408,11 +467,11 @@ async def execute_fix_simple_bugs(arguments: dict, config=None) -> List[TextCont
 
     prompt = f"""Fix the bug in this code.
 
-Error message: {arguments['error_message']}
+Error message: {arguments["error_message"]}
 {context_str}
 
 Code with bug:
-{arguments['code']}
+{arguments["code"]}
 
 Provide the corrected code with a brief explanation of the fix."""
 
@@ -429,10 +488,11 @@ async def execute_convert_code_format(
     """Execute code format conversion"""
     language = arguments.get("language", "python")
 
-    prompt = f"""Convert this code from {arguments['from_format']} to {arguments['to_format']}.
+    prompt = f"""Convert this code from {arguments["from_format"]} to \
+{arguments["to_format"]}.
 
 Original code:
-{arguments['code']}
+{arguments["code"]}
 
 Provide only the converted code."""
 
@@ -448,11 +508,12 @@ async def execute_improve_code_style(arguments: dict, config=None) -> List[TextC
     style_guide = arguments.get("style_guide", "pep8")
     language = arguments.get("language", "python")
 
-    prompt = f"""Improve the code style following {style_guide} guidelines for {language}.
+    prompt = f"""Improve the code style following {style_guide} guidelines \
+for {language}.
 Focus on: naming conventions, formatting, readability, and best practices.
 
 Original code:
-{arguments['code']}
+{arguments["code"]}
 
 Provide the improved code."""
 
@@ -480,7 +541,7 @@ async def execute_add_type_annotations(
     prompt = f"""Add comprehensive type annotations to this {language} code.
 
 Code to annotate:
-{arguments['code']}
+{arguments["code"]}
 
 Annotation style: {annotation_style}
 {generics_instruction}
@@ -520,10 +581,11 @@ async def execute_optimize_imports(arguments: dict, config=None) -> List[TextCon
 
     optimizations = ", ".join(optimization_types)
 
-    prompt = f"""Optimize the import statements in this {language} code following {style_guide} style guidelines.
+    prompt = f"""Optimize the import statements in this {language} code \
+following {style_guide} style guidelines.
 
 Code with imports to optimize:
-{arguments['code']}
+{arguments["code"]}
 
 Optimizations to perform: {optimizations}
 

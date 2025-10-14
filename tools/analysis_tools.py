@@ -4,7 +4,6 @@ Code analysis and quality tools
 
 import json
 import os
-from pathlib import Path
 from typing import List
 
 from mcp.types import TextContent, Tool
@@ -13,7 +12,7 @@ from config.models import LANGUAGE_CONFIGS, detect_project_language
 from core.client import call_vllm_api
 from security.utils import safe_path
 from utils.errors import create_error_response
-from utils.logging import log_error, log_info
+from utils.logging import log_info
 
 
 def create_analysis_tools() -> List[Tool]:
@@ -352,7 +351,7 @@ async def execute_analyze_codebase(arguments: dict, config=None) -> List[TextCon
                         with open(file_path, "r", encoding="utf-8") as f:
                             lines = len(f.readlines())
                         file_info.append({"path": relative_path, "lines": lines})
-                    except:
+                    except Exception:
                         continue
 
         # Detect primary language
@@ -403,7 +402,7 @@ async def execute_detect_code_smells(arguments: dict, config=None) -> List[TextC
     prompt = f"""Analyze this {language} code for potential quality issues and code smells.
 
 Code to analyze:
-{arguments['code']}
+{arguments["code"]}
 
 Look for:
 - Code duplication
@@ -438,7 +437,7 @@ async def execute_generate_code_review(
     prompt = f"""Perform a comprehensive code review of this {language} code diff.
 
 Code changes:
-{arguments['code_diff']}
+{arguments["code_diff"]}
 
 Focus areas: {focus_areas}
 Severity filter: {severity_filter}
@@ -481,7 +480,7 @@ async def execute_suggest_refactoring_opportunities(
     prompt = f"""Analyze this {language} code for refactoring opportunities.
 
 Code to analyze:
-{arguments['code']}
+{arguments["code"]}
 
 Refactoring types to look for: {types_str}
 Complexity threshold: {complexity_threshold}
@@ -524,7 +523,7 @@ async def execute_generate_performance_analysis(
     prompt = f"""Analyze this {language} code for performance bottlenecks and optimization opportunities.
 
 Code to analyze:
-{arguments['code']}
+{arguments["code"]}
 
 Performance context: {performance_context}
 Focus areas: {areas_str}
@@ -570,7 +569,7 @@ async def execute_security_scan_code(arguments: dict, config=None) -> List[TextC
     prompt = f"""Perform a security analysis of this {language} code.
 
 Code to scan:
-{arguments['code']}
+{arguments["code"]}
 
 Vulnerability types to check: {vuln_types_str}
 Severity threshold: {severity_threshold}
@@ -619,7 +618,7 @@ async def execute_generate_api_documentation(
     prompt = f"""Generate {doc_format} API documentation from this {language} code.
 
 Code containing API definitions:
-{arguments['code']}
+{arguments["code"]}
 
 {examples_instruction}
 
@@ -662,7 +661,7 @@ async def execute_generate_integration_tests(
     prompt = f"""Generate comprehensive integration tests using {framework} for this {language} code.
 
 Code to test:
-{arguments['code']}
+{arguments["code"]}
 
 Test scenarios: {scenarios_str}
 {fixtures_instruction}
@@ -707,7 +706,7 @@ async def execute_generate_unit_test_fixtures(
     prompt = f"""Generate test fixtures using {framework} for this code.
 
 Code under test:
-{arguments['code_under_test']}
+{arguments["code_under_test"]}
 
 Fixture types: {types_str}
 Data realism level: {data_realism}

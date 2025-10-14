@@ -12,7 +12,7 @@ from mcp.types import TextContent, Tool
 from core.client import call_vllm_api
 from security.utils import safe_path, validate_command
 from utils.errors import create_error_response
-from utils.logging import log_error, log_info
+from utils.logging import log_info
 
 
 def create_generation_tools() -> List[Tool]:
@@ -376,7 +376,7 @@ async def execute_generate_boilerplate_file(
     language = arguments.get("language", "python")
     options_str = json.dumps(arguments.get("options", {}), indent=2)
 
-    prompt = f"""Generate a complete {arguments['file_type']} file in {language}.
+    prompt = f"""Generate a complete {arguments["file_type"]} file in {language}.
 
 Options: {options_str}
 
@@ -393,9 +393,9 @@ async def execute_generate_schema(arguments: dict, config=None) -> List[TextCont
     """Execute schema generation"""
     language = arguments.get("language", "python")
 
-    prompt = f"""Generate a {arguments['schema_type']} schema in {language} based on this description:
+    prompt = f"""Generate a {arguments["schema_type"]} schema in {language} based on this description:
 
-{arguments['description']}
+{arguments["description"]}
 
 Generate complete, well-typed schema code."""
 
@@ -414,7 +414,7 @@ async def execute_generate_gitignore(arguments: dict, config=None) -> List[TextC
     frameworks_str = ", ".join(frameworks) if frameworks else "none"
     custom_str = "\n".join(custom_patterns) if custom_patterns else "none"
 
-    prompt = f"""Generate a comprehensive .gitignore file for {arguments['language']}.
+    prompt = f"""Generate a comprehensive .gitignore file for {arguments["language"]}.
 
 Additional frameworks/tools: {frameworks_str}
 Custom patterns to include: {custom_str}
@@ -444,7 +444,7 @@ async def execute_generate_github_workflow(
         else ""
     )
 
-    prompt = f"""Generate a GitHub Actions workflow file for {arguments['workflow_type']} in {language}.
+    prompt = f"""Generate a GitHub Actions workflow file for {arguments["workflow_type"]} in {language}.
 
 Triggers: {triggers_str}{custom_str}
 
@@ -467,14 +467,12 @@ async def execute_generate_pr_description(
     breaking_changes = arguments.get("breaking_changes", False)
 
     context_str = f"\n\nContext: {context}" if context else ""
-    breaking_str = (
-        "\n\n⚠️ This PR contains BREAKING CHANGES" if breaking_changes else ""
-    )
+    breaking_str = "\n\n⚠️ This PR contains BREAKING CHANGES" if breaking_changes else ""
 
-    prompt = f"""Generate a comprehensive pull request description for a {arguments['pr_type']} PR.
+    prompt = f"""Generate a comprehensive pull request description for a {arguments["pr_type"]} PR.
 
 Changes summary:
-{arguments['changes_summary']}{context_str}{breaking_str}
+{arguments["changes_summary"]}{context_str}{breaking_str}
 
 Include:
 - Brief summary
@@ -619,10 +617,10 @@ async def execute_create_github_issue(
     """Execute GitHub issue creation (generates content only)"""
     labels_str = ", ".join(arguments.get("labels", []))
 
-    prompt = f"""Generate a GitHub issue for a {arguments['issue_type']} in repository {arguments['repository']}.
+    prompt = f"""Generate a GitHub issue for a {arguments["issue_type"]} in repository {arguments["repository"]}.
 
-Title: {arguments['title']}
-Description: {arguments['description']}
+Title: {arguments["title"]}
+Description: {arguments["description"]}
 Labels: {labels_str}
 
 Generate a well-formatted issue body with:
@@ -651,11 +649,11 @@ Use markdown formatting."""
 
 async def execute_create_github_pr(arguments: dict, config=None) -> List[TextContent]:
     """Execute GitHub PR creation (generates content only)"""
-    prompt = f"""Generate a GitHub pull request for a {arguments['pr_type']} in repository {arguments['repository']}.
+    prompt = f"""Generate a GitHub pull request for a {arguments["pr_type"]} in repository {arguments["repository"]}.
 
-Title: {arguments['title']}
-Changes: {arguments['changes_summary']}
-From: {arguments['head_branch']} → {arguments.get('base_branch', 'main')}
+Title: {arguments["title"]}
+Changes: {arguments["changes_summary"]}
+From: {arguments["head_branch"]} → {arguments.get("base_branch", "main")}
 
 Generate a comprehensive PR description with:
 - Summary of changes

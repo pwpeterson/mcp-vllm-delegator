@@ -5,21 +5,61 @@ A simple server script to run the vLLM delegator MCP service.
 """
 
 import asyncio
+import importlib.util
 import logging
 import os
 import sys
 from pathlib import Path
 
 # Add the current directory to Python path to import our delegator
-current_dir = Path(__file__).parent
-sys.path.insert(0, str(current_dir))
+current_dir = Path(__file__).resolve().parent
+print(f"Current directory: {current_dir}")
 
+# Ensure current_dir is on sys.path once, at the front
+current_dir_str = str(current_dir)
+if current_dir_str not in sys.path:
+    sys.path.insert(0, current_dir_str)
+
+# Robust import with detailed diagnostics
 try:
     from vllm_delegator import main as delegator_main
-except ImportError:
+except ImportError as e:
     print("Error: Could not import vllm_delegator.py")
-    print("Make sure vllm_delegator.py is in the same directory as this script")
-    sys.exit(1)
+    print(f"Current directory: {current_dir}")
+    print(f"sys.path (first 5): {sys.path[:5]}")
+    print(f"Import error details: {e}")
+
+    # Probe directly by file path for clearer error messages
+    candidate = current_dir / "vllm_delegator.py"
+    print(f"Looking for: {candidate}")
+
+    if candidate.exists():
+        print("File exists but import failed. Attempting direct load...")
+        try:
+            spec = importlib.util.spec_from_file_location("vllm_delegator", candidate)
+            if spec and spec.loader:
+                mod = importlib.util.module_from_spec(spec)
+                sys.modules["vllm_delegator"] = mod
+                spec.loader.exec_module(mod)
+                delegator_main = getattr(mod, "main", None)
+                if delegator_main is None:
+                    print("Error: Found vllm_delegator.py but no 'main' function.")
+                    sys.exit(1)
+                print("✓ Successfully loaded vllm_delegator.py directly")
+            else:
+                print("Error: Could not create module spec")
+                sys.exit(1)
+        except Exception as inner:
+            print("Error: Found vllm_delegator.py but loading failed:")
+            print(f"  {type(inner).__name__}: {inner}")
+            import traceback
+
+            traceback.print_exc()
+            sys.exit(1)
+    else:
+        print("Error: vllm_delegator.py not found in the same directory as this script")
+        print(f"Directory contents: {list(current_dir.iterdir())[:10]}")
+        sys.exit(1)
 
 
 def setup_logging():
@@ -62,7 +102,11 @@ def check_environment():
 
 def check_vllm_connection():
     """Check if vLLM server is accessible (optional check)"""
-    import httpx
+    try:
+        import httpx
+    except ImportError:
+        print("⚠ httpx not installed, skipping vLLM connection check")
+        return False
 
     vllm_url = os.getenv("VLLM_API_URL", "http://localhost:8002/v1/chat/completions")
     models_url = vllm_url.replace("/chat/completions", "/models")

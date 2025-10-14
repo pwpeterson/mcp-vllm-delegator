@@ -2,8 +2,6 @@
 Validation utilities for LLM responses and code
 """
 
-from config.models import detect_language_from_code
-
 
 def validate_llm_code_response(code: str, language: str) -> bool:
     """Enhanced validation for code responses"""

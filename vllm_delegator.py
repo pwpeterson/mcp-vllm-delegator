@@ -76,8 +76,24 @@ from tools.git_tools import (
 )
 from tools.validation_tools import (
     create_validation_tools,
-    execute_validate,
-    execute_validate_correct,
+    execute_auto_format_with_black,
+    execute_fix_blank_lines,
+    execute_fix_complexity_issues,
+    execute_fix_docstring_issues,
+    execute_fix_import_issues,
+    execute_fix_indentation,
+    execute_fix_line_endings,
+    execute_fix_line_length,
+    execute_fix_missing_whitespace,
+    execute_fix_mypy_issues,
+    execute_fix_naming_conventions,
+    execute_fix_security_issues,
+    execute_fix_string_quotes,
+    execute_fix_syntax_errors,
+    execute_fix_trailing_whitespace,
+    execute_fix_unused_variables,
+    execute_precommit,
+    execute_precommit_fix,
 )
 from utils.logging import log_error, log_info, setup_logging
 
@@ -136,11 +152,43 @@ async def call_tool(name: str, arguments: dict):
         elif name == "generate_simple_code":
             return await execute_generate_simple_code(arguments)
 
+        elif name == "precommit":
+            return await execute_precommit(arguments, CONFIG)
         # Validation tools
-        elif name == "validate":
-            return await execute_validate(arguments, CONFIG)
-        elif name == "validate_correct":
-            return await execute_validate_correct(arguments, CONFIG)
+        elif name == "precommit&fix":
+            return await execute_precommit_fix(arguments, CONFIG)
+        elif name == "fix_line_length":
+            return await execute_fix_line_length(arguments, CONFIG)
+        elif name == "fix_missing_whitespace":
+            return await execute_fix_missing_whitespace(arguments, CONFIG)
+        elif name == "fix_import_issues":
+            return await execute_fix_import_issues(arguments, CONFIG)
+        elif name == "fix_indentation":
+            return await execute_fix_indentation(arguments, CONFIG)
+        elif name == "fix_blank_lines":
+            return await execute_fix_blank_lines(arguments, CONFIG)
+        elif name == "fix_trailing_whitespace":
+            return await execute_fix_trailing_whitespace(arguments, CONFIG)
+        elif name == "fix_string_quotes":
+            return await execute_fix_string_quotes(arguments, CONFIG)
+        elif name == "fix_line_endings":
+            return await execute_fix_line_endings(arguments, CONFIG)
+        elif name == "fix_naming_conventions":
+            return await execute_fix_naming_conventions(arguments, CONFIG)
+        elif name == "fix_unused_variables":
+            return await execute_fix_unused_variables(arguments, CONFIG)
+        elif name == "fix_docstring_issues":
+            return await execute_fix_docstring_issues(arguments, CONFIG)
+        elif name == "fix_security_issues":
+            return await execute_fix_security_issues(arguments, CONFIG)
+        elif name == "fix_complexity_issues":
+            return await execute_fix_complexity_issues(arguments, CONFIG)
+        elif name == "fix_syntax_errors":
+            return await execute_fix_syntax_errors(arguments, CONFIG)
+        elif name == "auto_format_with_black":
+            return await execute_auto_format_with_black(arguments, CONFIG)
+        elif name == "fix_mypy_issues":
+            return await execute_fix_mypy_issues(arguments, CONFIG)
 
         # Code tools
         elif name == "complete_code":
@@ -270,9 +318,9 @@ async def execute_health_check(arguments: dict):
         response = await client.get(api_url.replace("/chat/completions", "/models"))
         checks["vllm_connection"] = {
             "status": "healthy" if response.status_code == 200 else "unhealthy",
-            "response_time": response.elapsed.total_seconds()
-            if hasattr(response, "elapsed")
-            else 0,
+            "response_time": (
+                response.elapsed.total_seconds() if hasattr(response, "elapsed") else 0
+            ),
         }
     except Exception as e:
         checks["vllm_connection"] = {"status": "unhealthy", "error": str(e)}
@@ -295,12 +343,14 @@ async def execute_health_check(arguments: dict):
     checks["configuration"] = {
         "caching_enabled": CONFIG.features.caching if CONFIG.features else False,
         "metrics_enabled": CONFIG.features.metrics if CONFIG.features else False,
-        "auto_backup_enabled": CONFIG.features.auto_backup
-        if CONFIG.features
-        else False,
-        "allowed_paths": len(CONFIG.security.allowed_paths)
-        if CONFIG.security and CONFIG.security.allowed_paths
-        else 0,
+        "auto_backup_enabled": (
+            CONFIG.features.auto_backup if CONFIG.features else False
+        ),
+        "allowed_paths": (
+            len(CONFIG.security.allowed_paths)
+            if CONFIG.security and CONFIG.security.allowed_paths
+            else 0
+        ),
     }
 
     return [TextContent(type="text", text=json.dumps(checks, indent=2))]
@@ -313,7 +363,7 @@ async def execute_generate_simple_code(arguments: dict):
     prompt = f"""You are a code generator. Generate clean, working {language} code for the following request.
 Only output the code, no explanations unless asked.
 
-Request: {arguments['prompt']}"""
+Request: {arguments["prompt"]}"""
 
     log_info("Calling vLLM API for generate_simple_code")
     code = await call_vllm_api(prompt, "code_generation", language, CONFIG)

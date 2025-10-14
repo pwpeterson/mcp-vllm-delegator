@@ -1,0 +1,78 @@
+# Multi-stage build for vLLM-Delegator MCP Server
+FROM python:3.13-slim AS builder
+
+# Prevent interactive prompts during build
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    build-essential \
+ && rm -rf /var/lib/apt/lists/*
+
+# Install uv for fast Python package management
+RUN pip install --no-cache-dir uv
+
+# Set working directory
+WORKDIR /app
+
+# Copy dependency files first (to leverage build cache)
+COPY pyproject.toml uv.lock ./
+
+# Install dependencies into a local venv
+RUN uv sync --frozen
+
+# Optional: build-time sanity check to fail early if deps missing
+RUN /app/.venv/bin/python -c "import importlib.util; assert importlib.util.find_spec('mcp'), 'mcp missing in venv'; assert importlib.util.find_spec('httpx'), 'httpx missing'; import yaml; print('Dependency sanity check OK')"
+
+# -------- Production stage --------
+FROM python:3.13-slim AS production
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install minimal runtime deps (git/curl optional)
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+ && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user and group
+RUN useradd --create-home --shell /bin/bash vllm
+
+# Set working directory
+WORKDIR /app
+
+# Copy virtual environment from builder
+# Important: copy before setting USER so we have permissions to fix ownership later
+COPY --from=builder /app/.venv /app/.venv
+
+# Copy application code and then set ownership for the whole app dir
+COPY . /app
+RUN chown -R vllm:vllm /app
+
+# Set environment early so all subsequent invocations use venv Python
+ENV PATH="/app/.venv/bin:${PATH}" \
+    PYTHONPATH="/app" \
+    VLLM_API_URL="http://host.containers.internal:8002/v1/chat/completions" \
+    VLLM_MODEL="Qwen/Qwen2.5-Coder-32B-Instruct-AWQ" \
+    LOGGING_ON="true" \
+    LOG_LEVEL="INFO" \
+    LOG_FILE="/app/logs/vllm_mcp_delegator.log"
+
+# Create necessary directories with proper ownership
+RUN mkdir -p /app/logs /app/context_portal && \
+    chown -R vllm:vllm /app
+
+# Switch to non-root user
+USER vllm
+
+# Health check: keep it lightweight and non-importing to avoid flapping during cold start
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD python -c "import sys; sys.exit(0)"
+
+# Expose debug port (MCP is stdio-based, but this can help when testing)
+EXPOSE 3000
+
+# Prefer explicitly pinning the venv interpreter to avoid PATH issues
+CMD ["/app/.venv/bin/python", "vllm_delegator_server.py"]
