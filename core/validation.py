@@ -32,7 +32,7 @@ def validate_llm_code_response(code: str, language: str) -> bool:
 
 
 def validate_llm_response(
-    content: str, original_content: str = "", language: str = None, config=None
+    content: str, original_content: str = "", language: str | None = None, config=None
 ) -> bool:
     """Validate LLM response for safety"""
     max_length = (

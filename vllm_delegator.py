@@ -95,7 +95,13 @@ from tools.validation_tools import (
     execute_precommit,
     execute_precommit_fix,
 )
-from utils.logging import log_error, log_info, setup_logging
+from utils.logging import (
+    log_error,
+    log_system_event,
+    log_tool_execution,
+    log_vllm_request,
+    setup_logging,
+)
 
 # Load configuration
 CONFIG = load_config()
@@ -106,20 +112,28 @@ logger = setup_logging(CONFIG)
 # Initialize server
 server = Server("vllm-delegator-enhanced")
 
-log_info(f"vLLM API URL: {CONFIG.vllm.api_url if CONFIG.vllm else 'Not configured'}")
-log_info(f"vLLM Model: {CONFIG.vllm.model if CONFIG.vllm else 'Not configured'}")
-log_info(
-    f"Security: Allowed paths: {len(CONFIG.security.allowed_paths) if CONFIG.security and CONFIG.security.allowed_paths else 0}"
+# Log configuration details with enhanced formatting
+log_system_event(
+    "config",
+    "vLLM Configuration",
+    f"URL: {CONFIG.vllm.api_url if CONFIG.vllm else 'Not configured'}, Model: {CONFIG.vllm.model if CONFIG.vllm else 'Not configured'}",
 )
-log_info(
-    f"Features: Caching={CONFIG.features.caching if CONFIG.features else False}, Metrics={CONFIG.features.metrics if CONFIG.features else False}"
+log_system_event(
+    "security",
+    "Security Configuration",
+    f"Allowed paths: {len(CONFIG.security.allowed_paths) if CONFIG.security and CONFIG.security.allowed_paths else 0}",
+)
+log_system_event(
+    "config",
+    "Feature Configuration",
+    f"Caching={CONFIG.features.caching if CONFIG.features else False}, Metrics={CONFIG.features.metrics if CONFIG.features else False}",
 )
 
 
 @server.list_tools()
 async def list_tools():
     """List all available tools"""
-    log_info("list_tools() called")
+    log_system_event("startup", "Tools enumeration requested")
 
     tools = [
         # Base tools
@@ -135,7 +149,9 @@ async def list_tools():
     tools.extend(create_analysis_tools())
     tools.extend(create_database_tools())
 
-    log_info(f"Returning {len(tools)} tools")
+    log_system_event(
+        "startup", "Tools enumeration complete", f"{len(tools)} tools available"
+    )
     return tools
 
 
@@ -143,7 +159,11 @@ async def list_tools():
 async def call_tool(name: str, arguments: dict):
     """Execute a tool"""
     start_time = time.time()
-    log_info(f"call_tool() invoked: {name}")
+    log_system_event(
+        "performance",
+        f"Tool execution started: {name}",
+        f"Args: {len(str(arguments))} chars",
+    )
 
     try:
         # Base tools
@@ -278,6 +298,8 @@ async def call_tool(name: str, arguments: dict):
 
         else:
             # Unknown tool
+            duration = time.time() - start_time
+            log_tool_execution(name, start_time, False, duration, "Unknown tool")
             log_error(f"Unknown tool: {name}")
             metrics_collector.record_execution(
                 name, start_time, False, error_type="unknown_tool"
@@ -292,6 +314,10 @@ async def call_tool(name: str, arguments: dict):
             ]
 
     except Exception as e:
+        duration = time.time() - start_time
+        log_tool_execution(
+            name, start_time, False, duration, f"Exception: {type(e).__name__}"
+        )
         log_error(f"Error in call_tool({name}): {e}", exc_info=True)
         metrics_collector.record_execution(
             name, start_time, False, error_type=type(e).__name__
@@ -365,10 +391,14 @@ Only output the code, no explanations unless asked.
 
 Request: {arguments["prompt"]}"""
 
-    log_info("Calling vLLM API for generate_simple_code")
+    log_vllm_request(CONFIG.vllm.model if CONFIG.vllm else "unknown", len(prompt))
     code = await call_vllm_api(prompt, "code_generation", language, CONFIG)
-
-    log_info(f"Generated {len(code)} characters of code")
+    log_vllm_request(
+        CONFIG.vllm.model if CONFIG.vllm else "unknown",
+        len(prompt),
+        len(code),
+        success=True,
+    )
     return [TextContent(type="text", text=code)]
 
 
@@ -377,46 +407,63 @@ async def main():
     from mcp.server.stdio import stdio_server
 
     try:
-        log_info("Initializing Enhanced MCP server...")
+        log_system_event("startup", "Enhanced MCP server initialization started")
 
         # Test vLLM connection
-        log_info("Testing vLLM connection...")
+        log_system_event("connection", "Testing vLLM connection")
+        vllm_connected = False
         try:
-            client = await vllm_client.get_client()
-            api_url = (
-                CONFIG.vllm.api_url
-                if CONFIG.vllm
-                else "http://localhost:8002/v1/chat/completions"
+            test_response = await call_vllm_api(
+                "Test connection", "Say 'Connected' if you can read this."
             )
-            response = await client.get(api_url.replace("/chat/completions", "/models"))
-            log_info(f"✓ vLLM connection OK: {response.status_code}")
+            if test_response and "connected" in test_response.lower():
+                vllm_connected = True
+                log_system_event("connection", "vLLM connection successful")
+            else:
+                log_system_event(
+                    "connection",
+                    "vLLM connection test failed",
+                    f'Response: {test_response[:100] if test_response else "None"}',
+                )
         except Exception as e:
             log_error(f"⚠ Cannot connect to vLLM: {e}")
             log_error(
                 "Server will start anyway, but tools will fail until vLLM is available"
             )
 
-        log_info("Starting stdio server...")
+        log_system_event("startup", "Starting stdio server interface")
         async with stdio_server() as (read_stream, write_stream):
-            log_info("✓ Enhanced MCP server ready and listening")
+            log_system_event(
+                "startup",
+                "Enhanced MCP server ready and listening",
+                f'vLLM: {"connected" if vllm_connected else "disconnected"}',
+            )
             await server.run(
                 read_stream, write_stream, server.create_initialization_options()
             )
     except KeyboardInterrupt:
-        log_info("Server stopped by user")
+        log_system_event("shutdown", "Server stopped by user (KeyboardInterrupt)")
     except Exception as e:
+        log_system_event("error", "FATAL ERROR in main()", str(e))
         log_error(f"FATAL ERROR in main(): {e}", exc_info=True)
         sys.exit(1)
     finally:
         # Cleanup
+        log_system_event("shutdown", "Cleaning up resources")
         await vllm_client.close()
+        log_system_event("shutdown", "Server shutdown complete")
 
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        log_info("Shutting down...")
-    except Exception as e:
-        log_error(f"Unexpected error: {e}", exc_info=True)
-        sys.exit(1)
+    # For systemd compatibility - keep the process running
+    import signal
+
+    def signal_handler(signum, frame):
+        log_system_event("shutdown", f"Received signal {signum}")
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+
+    # Run the server
+    asyncio.run(main())

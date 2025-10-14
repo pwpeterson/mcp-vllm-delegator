@@ -495,6 +495,8 @@ async def execute_create_config_file(arguments: dict, config=None) -> List[TextC
     file_type = arguments.get("file_type")
     path = arguments.get("path")
     options = arguments.get("options", {})
+    if not path:
+        return create_error_response("create_config_file", "path is required")
     custom_prompt = arguments.get("custom_prompt", "")
 
     # Validate path
@@ -548,6 +550,14 @@ async def execute_create_directory_structure(
     base_path = arguments.get("base_path")
     project_name = arguments.get("project_name")
     options = arguments.get("options", {})
+    if not base_path:
+        return create_error_response(
+            "create_directory_structure", "base_path is required"
+        )
+    if not project_name:
+        return create_error_response(
+            "create_directory_structure", "project_name is required"
+        )
 
     # Validate base path
     try:
@@ -723,7 +733,7 @@ async def execute_execute_dev_command(
     allowed_commands = (
         config.security.allowed_commands if config and config.security else None
     )
-    if not validate_command(cmd, allowed_commands):
+    if not validate_command(cmd, allowed_commands or {}):
         return create_error_response("execute_dev_command", "Command not allowed")
 
     log_info(f"Executing: {' '.join(cmd)} in {safe_working_dir}")

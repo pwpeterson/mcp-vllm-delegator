@@ -240,7 +240,7 @@ async def execute_git_add(arguments: dict, config=None) -> List[TextContent]:
     allowed_commands = (
         config.security.allowed_commands if config and config.security else None
     )
-    if not validate_command(cmd, allowed_commands):
+    if not validate_command(cmd, allowed_commands or {}):
         return create_error_response("git_add", "Git add command not allowed")
 
     log_info(f"Executing: {' '.join(cmd)}")
@@ -275,7 +275,7 @@ async def execute_git_commit(arguments: dict, config=None) -> List[TextContent]:
     allowed_commands = (
         config.security.allowed_commands if config and config.security else None
     )
-    if not validate_command(cmd, allowed_commands):
+    if not validate_command(cmd, allowed_commands or {}):
         return create_error_response("git_commit", "Git commit command not allowed")
 
     log_info("Executing: git commit -m '[message]'")
@@ -341,7 +341,7 @@ async def execute_git_diff(arguments: dict, config=None) -> List[TextContent]:
     allowed_commands = (
         config.security.allowed_commands if config and config.security else None
     )
-    if not validate_command(cmd, allowed_commands):
+    if not validate_command(cmd, allowed_commands or {}):
         return create_error_response("git_diff", "Git diff command not allowed")
 
     log_info(f"Executing: {' '.join(cmd)}")
@@ -376,7 +376,7 @@ async def execute_git_log(arguments: dict, config=None) -> List[TextContent]:
     allowed_commands = (
         config.security.allowed_commands if config and config.security else None
     )
-    if not validate_command(cmd, allowed_commands):
+    if not validate_command(cmd, allowed_commands or {}):
         return create_error_response("git_log", "Git log command not allowed")
 
     log_info(f"Executing: {' '.join(cmd)}")

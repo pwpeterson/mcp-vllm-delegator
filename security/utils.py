@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import List
 
 
-def safe_path(base_path: str, target_path: str, allowed_paths: List[str] = None) -> str:
+def safe_path(
+    base_path: str, target_path: str, allowed_paths: List[str] | None = None
+) -> str:
     """Validate that target_path is within base_path to prevent directory traversal"""
     base = Path(base_path).resolve()
     target = (base / target_path).resolve()
@@ -27,7 +29,9 @@ def safe_path(base_path: str, target_path: str, allowed_paths: List[str] = None)
     raise ValueError(f"Path {target_path} is not in allowed directories")
 
 
-def validate_command(cmd_parts: List[str], allowed_commands: dict = None) -> bool:
+def validate_command(
+    cmd_parts: List[str], allowed_commands: dict | None = None
+) -> bool:
     """Validate command against allowed commands"""
     if not cmd_parts:
         return False
@@ -56,7 +60,7 @@ def validate_file_size(file_path: str, max_size: int = 1024 * 1024) -> bool:
         return False
 
 
-def create_backup(file_path: str, auto_backup: bool = True) -> str:
+def create_backup(file_path: str, auto_backup: bool = True) -> str | None:
     """Create backup of file before modification"""
     if auto_backup and os.path.exists(file_path):
         backup_path = f"{file_path}.backup.{int(time.time())}"

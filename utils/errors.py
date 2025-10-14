@@ -11,14 +11,14 @@ from mcp.types import TextContent
 class ToolError(Exception):
     """Custom exception for tool errors"""
 
-    def __init__(self, tool_name: str, error: str, context: dict = None):
+    def __init__(self, tool_name: str, error: str, context: dict | None = None):
         self.tool_name = tool_name
         self.error = error
         self.context = context or {}
         super().__init__(f"{tool_name}: {error}")
 
 
-def create_error_response(tool_name: str, error: str, context: dict = None):
+def create_error_response(tool_name: str, error: str, context: dict | None = None):
     """Create standardized error response"""
     return [
         TextContent(

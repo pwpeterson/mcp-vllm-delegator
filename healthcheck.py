@@ -16,18 +16,18 @@ def main():
         sys.path.insert(0, str(app_dir))
 
         # Try to import and initialize the VLLMDelegator
-        from vllm_delegator import VLLMDelegator
+        from vllm_delegator import server
 
-        # Create delegator instance (this tests configuration loading)
-        delegator = VLLMDelegator()
+        # Create server instance (this tests configuration loading)
+        server = server
 
-        # Check if delegator was created successfully
-        if delegator is None:
+        # Check if server was created successfully
+        if server is None:
             print("ERROR: Failed to create VLLMDelegator instance", file=sys.stderr)
             return 1
 
         # Test basic functionality
-        if hasattr(delegator, "config") and delegator.config:
+        if server is not None:
             print("OK: VLLMDelegator initialized successfully")
             return 0
         else:

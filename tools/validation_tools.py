@@ -617,7 +617,7 @@ async def execute_precommit(arguments: dict, config=None) -> List[TextContent]:
     allowed_commands = (
         config.security.allowed_commands if config and config.security else None
     )
-    if not validate_command(cmd, allowed_commands):
+    if not validate_command(cmd, allowed_commands or {}):
         metrics_collector.record_execution(
             name, start_time, False, error_type="security_error"
         )

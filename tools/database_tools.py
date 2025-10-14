@@ -97,6 +97,10 @@ async def execute_create_database_schema(
     """Execute database schema creation"""
     database_path = arguments.get("database_path")
     schema_description = arguments.get("schema_description")
+    if not database_path:
+        return create_error_response(
+            "create_database_schema", "database_path is required"
+        )
     tables = arguments.get("tables", [])
 
     # Validate database path
@@ -175,6 +179,8 @@ async def execute_generate_sql_queries(
 ) -> List[TextContent]:
     """Execute SQL query generation"""
     query_type = arguments.get("query_type")
+    if not query_type:
+        return create_error_response("generate_sql_queries", "query_type is required")
     table_info = arguments.get("table_info")
     requirements = arguments.get("requirements")
     execute_query = arguments.get("execute", False)
